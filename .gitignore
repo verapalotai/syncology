@@ -1,0 +1,28 @@
+# --- privacy wall: real health data and proprietary corpus never enter git ---
+data/*
+!data/README.md
+
+# secrets & env
+.env
+.env.*
+!.env.example
+*.pem
+token*.txt
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.ipynb_checkpoints/
+
+# local db / artifacts
+*.duckdb
+*.duckdb.wal
+*.kuzu
+kuzu_db/
+
+# os / editor
+.DS_Store
+.idea/
+.vscode/

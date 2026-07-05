@@ -35,11 +35,12 @@ flowchart LR
   AS --> DA
   CAT --> DN[/daily_nutrition/]
   CAT --> CD[/cycle_days/]
-  CD -->|thermal-shift inference| CP[(cycle_phases)]
+  CD -->|sympto-thermal inference| CP[(cycle_phases)]
+  CD -->|sympto-thermal inference| CS[(cycle_summary)]
 
   classDef tbl fill:#e8f0fe,stroke:#4285f4;
   classDef view fill:#e6f4ea,stroke:#34a853;
-  class M,AS,MC,CVM,CP tbl;
+  class M,AS,MC,CVM,CP,CS tbl;
   class CAT,DA,DN,CD view;
 ```
 
@@ -93,24 +94,72 @@ Auditable entity-resolution table. PK `(metric, raw_value)`.
 | `label` | VARCHAR **NN** | clean label, e.g. `medium`, `egg_white`, `present` |
 | `ordinal` | INTEGER | rank where the category is meaningfully ordered (flow intensity, mucus fertility signal); NULL for nominal / presence-only values |
 
-### `cycle_phases` — inferred phase per day (601 rows)
+### `cycle_phases` — inferred phase + fertility zone per day (601 rows)
 
 Materialized from `cycle_days`. PK `day`.
 
 | column | type | notes |
 |---|---|---|
 | `day` | DATE **PK** | local calendar date |
-| `phase` | VARCHAR **NN** | `menstruation` / `follicular` / `ovulation` / `luteal` / `unknown` |
+| `phase` | VARCHAR **NN** | clinical: `menstruation` / `follicular` / `ovulation` / `luteal` / `unknown` |
+| `fertility_zone` | VARCHAR **NN** | STM zones: `infertile_pre` / `fertile` / `infertile_post` / `unknown` |
+| `fertile_window` | BOOLEAN **NN** | shorthand for `fertility_zone = 'fertile'` |
 | `cycle_day` | INTEGER | 1-based day within the current cycle, NULL outside a detected cycle |
-| `fertile_window` | BOOLEAN **NN** | peak mucus (egg-white), LH surge, or the days around a detected ovulation |
 
-**Phase policy — conservative, with explicit `unknown`.** PMOS cycles are often
-long / irregular / anovulatory, so this does *not* force a 4-phase label onto
-every day. Ovulation is labeled only on a confirmed BBT thermal shift (the
-sympto-thermal "3-over-6" rule); `follicular`/`luteal` are assigned only around a
-detected ovulation; ambiguous or anovulatory stretches stay `unknown`. On the
-real data this yields ~66% `unknown`, 5 ovulations over ~1.8 yrs, and a clean
-biphasic BBT signal (follicular ≈ 36.48 °C < luteal ≈ 36.95 °C).
+**Method — sympto-thermal (STM), conservative with explicit `unknown`.**
+Implements the rules of a sympto-thermal fertility-awareness course, cross-checking
+the two primary biomarkers. PMOS cycles are often long / irregular / anovulatory,
+so nothing is fabricated — unconfirmed stretches stay `unknown`.
+
+- **Temperature is the only confirmer of ovulation.** Coverline = the highest of
+  the 6 low readings; need 3 readings above it, the **3rd ≥ 0.2 °C** above (course
+  value). *Exception 1:* if the 3rd isn't a full 0.2, a **4th above the line**
+  confirms. *Exception 2:* a reading dipping to/below the line voids that run
+  (conservative). Ovulation = the last low day before the rise.
+- **Mucus predicts.** Peak day (`csúcsnap`) = last peak-type mucus day (watery /
+  egg-white); mucus confirms at **peak + 3**. Before ovulation, *any* mucus is
+  fertile (change point = first mucus).
+- **Cross-check:** confirmation day = the **later** of temperature-confirm and
+  peak + 3 (temperature still required). Fertility zones follow: `infertile_pre`
+  (menses → first mucus), `fertile` (first mucus → confirmation), `infertile_post`
+  (after confirmation).
+
+*Scope note:* the course's advanced early-infertile counting rules (−21-day,
+Döring −8, 5/3-day) are contraceptive-precision rules needing 6–12 logged cycles;
+they are intentionally **not** implemented — `infertile_pre` is simply menses →
+first mucus.
+
+On the real data (coverline margin 0.2 °C): **15/20 cycles ovulatory (75%)**,
+16% `unknown`, biphasic BBT confirmed (follicular ≈ 36.47 °C < luteal ≈ 36.67 °C).
+Detection is stable across 0.15–0.30 °C (the proper coverline rule is robust to
+the margin), so the course's 0.2 needs no tuning; see
+`scripts/sweep_ovulation_threshold.py`.
+
+### `cycle_summary` — one row per cycle, with anomaly flags (20 rows)
+
+Materialized from the same inference. PK `cycle_number`.
+
+| column | type | notes |
+|---|---|---|
+| `cycle_number` | INTEGER **PK** | 1-based in observed order |
+| `cycle_start` / `next_start` | DATE | menses onsets bounding the cycle |
+| `cycle_length_days` | INTEGER | `start → next_start`; NULL for the censored last cycle |
+| `ovulation_day` | DATE | last low day before the temperature rise (NULL if anovulatory) |
+| `temp_confirm_day` | DATE | day the temperature run confirms (3rd/4th high) |
+| `peak_day` | DATE | last peak-type mucus day (`csúcsnap`) |
+| `confirmation_day` | DATE | cross-checked: `max(temp_confirm, peak + 3)` |
+| `follicular_days` / `luteal_days` | INTEGER | phase lengths around a detected ovulation |
+| `short_luteal` | BOOLEAN **NN** | luteal ≤ 10 days — the course's low-progesterone flag |
+| `cycle_length_z` / `luteal_length_z` | DOUBLE | z-score vs population norms |
+| `cycle_length_flag` / `luteal_length_flag` | BOOLEAN | |z| > 2σ (NULL if length unknown) |
+| `anovulatory` | BOOLEAN **NN** | no temperature-confirmed ovulation |
+
+Norms (for z-scores): cycle length μ=29.30, σ=3.89 (n=1665); luteal length
+μ=13.27, σ=2.67 (n=1514), from Fehring et al. (2012) menstrual-cycle-phase data.
+On the real data 7/20 cycles flag — short luteals (5–7 d, low-progesterone signal)
+and very long cycles (up to 67 d, +9.7σ). A flagged *long* luteal (> ~16 d) usually
+means a false-early thermal shift in a long cycle, so the flag doubles as a
+detection-quality check.
 
 ### `metric_catalog` — per-metric summary (59 rows)
 

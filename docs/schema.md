@@ -129,10 +129,18 @@ Döring −8, 5/3-day) are contraceptive-precision rules needing 6–12 logged c
 they are intentionally **not** implemented — `infertile_pre` is simply menses →
 first mucus.
 
-On the real data (coverline margin 0.2 °C): **15/20 cycles ovulatory (75%)**,
-16% `unknown`, biphasic BBT confirmed (follicular ≈ 36.47 °C < luteal ≈ 36.67 °C).
-Detection is stable across 0.15–0.30 °C (the proper coverline rule is robust to
-the margin), so the course's 0.2 needs no tuning; see
+**Physiological guard.** The course states the longest luteal phase is ~16 days,
+so a detected shift implying a longer luteal is treated as a false-early shift
+(common in long PMOS cycles): it is skipped and scanning continues for a
+plausible later shift. If one is found the cycle is ovulatory with a realistic
+luteal; if not it is `anovulatory` — either way `suspect_ovulation` records that
+a shift was rejected.
+
+On the real data (coverline margin 0.2 °C): **14/20 cycles ovulatory (70%)**, 6
+cycles with a guard-rejected suspect shift, 23% `unknown`, and a clean biphasic
+BBT signal (follicular ≈ 36.50 °C < luteal ≈ 36.83 °C — the guard *sharpens* this
+by keeping follicular-temperature days out of luteal). Detection is stable across
+0.15–0.30 °C, so the course's 0.2 needs no tuning; see
 `scripts/sweep_ovulation_threshold.py`.
 
 ### `cycle_summary` — one row per cycle, with anomaly flags (20 rows)
@@ -150,16 +158,17 @@ Materialized from the same inference. PK `cycle_number`.
 | `confirmation_day` | DATE | cross-checked: `max(temp_confirm, peak + 3)` |
 | `follicular_days` / `luteal_days` | INTEGER | phase lengths around a detected ovulation |
 | `short_luteal` | BOOLEAN **NN** | luteal ≤ 10 days — the course's low-progesterone flag |
+| `suspect_ovulation` | BOOLEAN **NN** | a thermal shift was detected but skipped by the >16-day-luteal guard |
 | `cycle_length_z` / `luteal_length_z` | DOUBLE | z-score vs population norms |
 | `cycle_length_flag` / `luteal_length_flag` | BOOLEAN | |z| > 2σ (NULL if length unknown) |
 | `anovulatory` | BOOLEAN **NN** | no temperature-confirmed ovulation |
 
 Norms (for z-scores): cycle length μ=29.30, σ=3.89 (n=1665); luteal length
 μ=13.27, σ=2.67 (n=1514), from Fehring et al. (2012) menstrual-cycle-phase data.
-On the real data 7/20 cycles flag — short luteals (5–7 d, low-progesterone signal)
-and very long cycles (up to 67 d, +9.7σ). A flagged *long* luteal (> ~16 d) usually
-means a false-early thermal shift in a long cycle, so the flag doubles as a
-detection-quality check.
+On the real data 8/20 cycles flag — mostly **short luteals (5–7 d**, the
+low-progesterone signal, now surfaced correctly because the guard rejects the
+false-early shifts that previously masked them as long luteals) plus very long
+cycles (up to 67 d, +9.7σ).
 
 ### `metric_catalog` — per-metric summary (59 rows)
 

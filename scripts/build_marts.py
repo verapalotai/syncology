@@ -46,6 +46,8 @@ def main() -> None:
     print(f"  cycles              : {stats.n_cycles}")
     print(f"  ovulatory (detected): {stats.n_ovulatory_cycles}"
           f"  ({stats.n_ovulatory_cycles / (stats.n_cycles or 1):.0%})")
+    print(f"  suspect (guard hit) : {stats.n_suspect_cycles}"
+          f"   (false-early shift skipped: implied luteal > {marts._MAX_LUTEAL_DAYS}d)")
     print(f"  flagged vs norms    : {stats.n_flagged_cycles}")
     flagged = con.execute(
         """

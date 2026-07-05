@@ -85,6 +85,12 @@ _MUCUS_CONFIRM_DAYS = 3  # peak day + 3 = mucus confirmation (CS+3)
 _FERTILE_LOOKBACK = 5
 _SHORT_LUTEAL_DAYS = 10
 
+# Physiological max luteal length (days). The course states the longest luteal
+# phase is ~16 days; a detected shift implying a longer luteal is almost
+# certainly a false-early shift (common in long PMOS cycles), so it is skipped
+# and scanning continues — see _detect_temp_shift's guard.
+_MAX_LUTEAL_DAYS = 16
+
 # Population reference norms for anomaly flagging: menstrual cycle and luteal
 # phase lengths (days) from Fehring et al. (2012) menstrual-cycle-phase data —
 # the standard prospective norms (n counts below are the study's per-phase
@@ -108,6 +114,7 @@ class MartStats:
     n_cycles: int = 0
     n_ovulatory_cycles: int = 0
     n_flagged_cycles: int = 0
+    n_suspect_cycles: int = 0
     shift_c: float = DEFAULT_SHIFT_C
 
 
@@ -210,6 +217,7 @@ class Cycle:
     follicular_days: int | None  # start -> ovulation, inclusive
     luteal_days: int | None  # ovulation -> next menses onset
     short_luteal: bool  # luteal <= _SHORT_LUTEAL_DAYS (low-progesterone flag)
+    suspect_ovulation: bool  # a shift was seen but skipped as a false-early shift
 
 
 def _z(value: float, norm: dict) -> float:
@@ -217,9 +225,12 @@ def _z(value: float, norm: dict) -> float:
 
 
 def _detect_temp_shift(
-    series: list[tuple[date, float]], shift_c: float = DEFAULT_SHIFT_C
-) -> tuple[date | None, date | None]:
-    """Return ``(ovulation_day, confirmation_day)`` from a cycle's BBT series.
+    series: list[tuple[date, float]],
+    shift_c: float = DEFAULT_SHIFT_C,
+    cycle_end: date | None = None,
+    max_luteal: int | None = None,
+) -> tuple[date | None, date | None, bool]:
+    """Return ``(ovulation_day, confirmation_day, suspect)`` from a BBT series.
 
     Implements the STM coverline rule (see the module docstring): coverline =
     highest of the 6 low readings; the next 3 readings must all be above it, and
@@ -227,8 +238,15 @@ def _detect_temp_shift(
     confirms). Exception 2: a reading falling back to/below the line voids that
     run (conservative). ``series`` is ``(day, bbt)`` in date order over days that
     have a reading. Ovulation is the last low day before the rise; the
-    confirmation day is the 3rd (or 4th) high. ``(None, None)`` if no shift.
+    confirmation day is the 3rd (or 4th) high.
+
+    Physiological guard: when ``cycle_end`` and ``max_luteal`` are given, a shift
+    whose implied luteal (``cycle_end - ovulation``) exceeds ``max_luteal`` is a
+    false-early shift — it is skipped and scanning continues for a plausible later
+    one. ``suspect`` is True if at least one shift was skipped by this guard.
+    Returns ``(None, None, suspect)`` if no acceptable shift is found.
     """
+    suspect = False
     n = len(series)
     for i in range(_LOW_WINDOW, n - _HIGH_RUN + 1):
         coverline = max(b for _, b in series[i - _LOW_WINDOW:i])
@@ -237,11 +255,20 @@ def _detect_temp_shift(
             continue  # Exception 2: a non-elevated reading voids this run
         ov = series[i - 1][0]  # last low day before the rise
         if highs[_HIGH_RUN - 1][1] >= coverline + shift_c:
-            return ov, highs[_HIGH_RUN - 1][0]
-        # Exception 1: 3rd not a full shift_c above -> a 4th above the line confirms.
-        if len(highs) > _HIGH_RUN and highs[_HIGH_RUN][1] > coverline:
-            return ov, highs[_HIGH_RUN][0]
-    return None, None
+            confirm = highs[_HIGH_RUN - 1][0]
+        elif len(highs) > _HIGH_RUN and highs[_HIGH_RUN][1] > coverline:
+            confirm = highs[_HIGH_RUN][0]  # Exception 1: a 4th above the line
+        else:
+            continue
+        if (
+            cycle_end is not None
+            and max_luteal is not None
+            and (cycle_end - ov).days > max_luteal
+        ):
+            suspect = True  # false-early shift: implausibly long luteal -> skip
+            continue
+        return ov, confirm, suspect
+    return None, None, suspect
 
 
 def analyze_cycles(
@@ -279,9 +306,12 @@ def analyze_cycles(
             if d in menses:
                 phase[d] = "menstruation"
 
-        # Temperature — the only sign that confirms ovulation occurred.
+        # Temperature — the only sign that confirms ovulation occurred. The
+        # guard rejects a false-early shift implying an implausibly long luteal.
         series = [(d, bbt[d]) for d in window if d in bbt]
-        ov, temp_confirm = _detect_temp_shift(series, shift_c)
+        ov, temp_confirm, suspect = _detect_temp_shift(
+            series, shift_c, cycle_end=nxt, max_luteal=_MAX_LUTEAL_DAYS
+        )
 
         # Mucus — change point (first any-mucus) and peak day (last peak-type).
         mucus_days = [d for d in window if mucus[d] >= _ANY_MUCUS]
@@ -331,7 +361,7 @@ def analyze_cycles(
         short_luteal = luteal is not None and luteal <= _SHORT_LUTEAL_DAYS
         cycles.append(
             Cycle(number, start, nxt, ov, temp_confirm, peak_day, confirmation,
-                  length, follicular, luteal, short_luteal)
+                  length, follicular, luteal, short_luteal, suspect)
         )
 
     # Peak mucus / LH surge are fertile signals in their own right — but never
@@ -381,13 +411,13 @@ def write_cycle_phases(con: duckdb.DuckDBPyConnection, per_day: list[dict]) -> d
 
 def write_cycle_summary(
     con: duckdb.DuckDBPyConnection, cycles: list[Cycle]
-) -> tuple[int, int, int]:
+) -> tuple[int, int, int, int]:
     """Materialize ``cycle_summary`` with population-norm z-scores + flags.
 
-    Returns ``(n_cycles, n_ovulatory, n_flagged)``. Cycle/luteal lengths are
-    z-scored against :data:`POP_NORMS`; a length beyond :data:`FLAG_SIGMA` sigma
-    is flagged. Flags are NULL where the length is unknown (censored last cycle,
-    or no detected ovulation).
+    Returns ``(n_cycles, n_ovulatory, n_flagged, n_suspect)``. Cycle/luteal
+    lengths are z-scored against :data:`POP_NORMS`; a length beyond
+    :data:`FLAG_SIGMA` sigma is flagged. Flags are NULL where the length is
+    unknown (censored last cycle, or no detected ovulation).
     """
     con.execute("DROP TABLE IF EXISTS cycle_summary")
     con.execute(
@@ -404,6 +434,7 @@ def write_cycle_summary(
             follicular_days    INTEGER,
             luteal_days        INTEGER,
             short_luteal       BOOLEAN NOT NULL,
+            suspect_ovulation  BOOLEAN NOT NULL,
             cycle_length_z     DOUBLE,
             luteal_length_z    DOUBLE,
             cycle_length_flag  BOOLEAN,
@@ -429,6 +460,7 @@ def write_cycle_summary(
                 c.follicular_days,
                 c.luteal_days,
                 c.short_luteal,
+                c.suspect_ovulation,
                 round(cz, 3) if cz is not None else None,
                 round(lz, 3) if lz is not None else None,
                 (abs(cz) > FLAG_SIGMA) if cz is not None else None,
@@ -438,14 +470,15 @@ def write_cycle_summary(
         )
     if out:
         con.executemany(
-            "INSERT INTO cycle_summary VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO cycle_summary VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             out,
         )
     n_ovulatory = sum(1 for c in cycles if c.ovulation is not None)
+    n_suspect = sum(1 for c in cycles if c.suspect_ovulation)
     n_flagged = con.execute(
         "SELECT count(*) FROM cycle_summary WHERE cycle_length_flag OR luteal_length_flag"
     ).fetchone()[0]
-    return len(cycles), n_ovulatory, n_flagged
+    return len(cycles), n_ovulatory, n_flagged, n_suspect
 
 
 def _fetch_cycle_days(con: duckdb.DuckDBPyConnection) -> list[dict]:
@@ -470,9 +503,12 @@ def apply(
 
     per_day, cycles = analyze_cycles(_fetch_cycle_days(con), shift_c)
     stats.phase_counts = write_cycle_phases(con, per_day)
-    stats.n_cycles, stats.n_ovulatory_cycles, stats.n_flagged_cycles = write_cycle_summary(
-        con, cycles
-    )
+    (
+        stats.n_cycles,
+        stats.n_ovulatory_cycles,
+        stats.n_flagged_cycles,
+        stats.n_suspect_cycles,
+    ) = write_cycle_summary(con, cycles)
 
     stats.daily_activity_rows = con.execute("SELECT count(*) FROM daily_activity").fetchone()[0]
     stats.daily_nutrition_rows = con.execute("SELECT count(*) FROM daily_nutrition").fetchone()[0]

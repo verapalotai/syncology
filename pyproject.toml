@@ -1,0 +1,35 @@
+[project]
+name = "syncology"
+version = "0.1.0"
+description = "Personal health knowledge graph + agentic copilot — ingestion & KG (A1)"
+readme = "README.md"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+    "duckdb>=1.1",
+    "python-dateutil>=2.9",
+    "pydantic>=2.9",
+]
+
+[project.optional-dependencies]
+# Added as each ingestion module lands, to keep the lock honest per step.
+labs = ["pdfplumber>=0.11"]
+llm = ["instructor>=1.6", "anthropic>=0.40"]
+graph = ["kuzu>=0.6"]
+tabular = ["polars>=1.9"]
+
+[dependency-groups]
+dev = ["pytest>=8.3", "ruff>=0.7"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/syncology"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

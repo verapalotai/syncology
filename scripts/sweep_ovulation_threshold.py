@@ -35,7 +35,7 @@ def main() -> None:
     total_cycles = len(cycles0)
 
     print("=" * 68)
-    print(f"OVULATION-THRESHOLD SWEEP   ({total_cycles} cycles; STM course margin = 0.20)")
+    print(f"OVULATION-THRESHOLD SWEEP   ({total_cycles} cycles; standard STM margin = 0.20)")
     print("  shift_c = required °C of the 3rd high above the coverline")
     print("=" * 68)
     print(f"{'shift_c':>8} {'ovulatory':>10} {'rate':>7} "

@@ -20,15 +20,15 @@ and two derived tables:
 *local* calendar date (default ``Europe/Budapest``), so a 23:00 reading lands on
 the right day rather than rolling into the next UTC day.
 
-**Cycle-phase inference — the sympto-thermal method (STM).** Implements the rules
-from a sympto-thermal fertility-awareness course, cross-checking the two primary
+**Cycle-phase inference — the sympto-thermal method (STM).** Implements the
+established STM fertility-awareness rules, cross-checking the two primary
 biomarkers. It stays conservative with an explicit ``unknown``: PMOS cycles are
 frequently long / irregular / anovulatory, so structure is never fabricated.
 
 *Temperature is the only sign that confirms ovulation occurred.* Coverline rule:
 after 6 low readings, look for 3 readings above the highest of those 6 (the
-coverline); the 3rd must sit at least ``shift_c`` (0.2 °C, per the course) above
-the coverline. Exception 1: if the 3rd isn't a full 0.2 above, a 4th reading
+coverline); the 3rd must sit at least ``shift_c`` (0.2 °C, the standard STM
+value) above the coverline. Exception 1: if the 3rd isn't a full 0.2 above, a 4th reading
 above the line confirms instead. Exception 2 (conservative): if any reading in
 the run falls back to/below the line, that run is void. The last low day before
 the rise is taken as ovulation.
@@ -67,11 +67,11 @@ DEFAULT_TZ = "Europe/Budapest"
 _LOW_WINDOW = 6
 _HIGH_RUN = 3
 
-# 3rd-high margin above the coverline, in °C. The course specifies 0.2 — note
-# this is NOT the old flat "all highs above max+X" threshold: here the coverline
-# has no offset and only the 3rd high must clear it by this margin, so it detects
-# more than an all-three rule at the same number would. Tunable via the sweep in
-# scripts/sweep_ovulation_threshold.py; see docs/schema.md.
+# 3rd-high margin above the coverline, in °C. The standard STM value is 0.2 —
+# note this is NOT the old flat "all highs above max+X" threshold: here the
+# coverline has no offset and only the 3rd high must clear it by this margin, so
+# it detects more than an all-three rule at the same number would. Tunable via
+# the sweep in scripts/sweep_ovulation_threshold.py; see docs/schema.md.
 DEFAULT_SHIFT_C = 0.2
 
 # Cervical-mucus ordinals (see transform/category_values.py): >= _PEAK_MUCUS is
@@ -85,10 +85,10 @@ _MUCUS_CONFIRM_DAYS = 3  # peak day + 3 = mucus confirmation (CS+3)
 _FERTILE_LOOKBACK = 5
 _SHORT_LUTEAL_DAYS = 10
 
-# Physiological max luteal length (days). The course states the longest luteal
-# phase is ~16 days; a detected shift implying a longer luteal is almost
-# certainly a false-early shift (common in long PMOS cycles), so it is skipped
-# and scanning continues — see _detect_temp_shift's guard.
+# Physiological max luteal length (days). The luteal phase runs to ~16 days at
+# most, so a detected shift implying a longer luteal is almost certainly a
+# false-early shift (common in long PMOS cycles); it is skipped and scanning
+# continues — see _detect_temp_shift's guard.
 _MAX_LUTEAL_DAYS = 16
 
 # Population reference norms for anomaly flagging: menstrual cycle and luteal

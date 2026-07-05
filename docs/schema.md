@@ -107,15 +107,15 @@ Materialized from `cycle_days`. PK `day`.
 | `cycle_day` | INTEGER | 1-based day within the current cycle, NULL outside a detected cycle |
 
 **Method — sympto-thermal (STM), conservative with explicit `unknown`.**
-Implements the rules of a sympto-thermal fertility-awareness course, cross-checking
-the two primary biomarkers. PMOS cycles are often long / irregular / anovulatory,
-so nothing is fabricated — unconfirmed stretches stay `unknown`.
+Implements the established STM fertility-awareness rules, cross-checking the two
+primary biomarkers. PMOS cycles are often long / irregular / anovulatory, so
+nothing is fabricated — unconfirmed stretches stay `unknown`.
 
 - **Temperature is the only confirmer of ovulation.** Coverline = the highest of
-  the 6 low readings; need 3 readings above it, the **3rd ≥ 0.2 °C** above (course
-  value). *Exception 1:* if the 3rd isn't a full 0.2, a **4th above the line**
-  confirms. *Exception 2:* a reading dipping to/below the line voids that run
-  (conservative). Ovulation = the last low day before the rise.
+  the 6 low readings; need 3 readings above it, the **3rd ≥ 0.2 °C** above (the
+  standard STM value). *Exception 1:* if the 3rd isn't a full 0.2, a **4th above
+  the line** confirms. *Exception 2:* a reading dipping to/below the line voids
+  that run (conservative). Ovulation = the last low day before the rise.
 - **Mucus predicts.** Peak day (`csúcsnap`) = last peak-type mucus day (watery /
   egg-white); mucus confirms at **peak + 3**. Before ovulation, *any* mucus is
   fertile (change point = first mucus).
@@ -124,13 +124,13 @@ so nothing is fabricated — unconfirmed stretches stay `unknown`.
   (menses → first mucus), `fertile` (first mucus → confirmation), `infertile_post`
   (after confirmation).
 
-*Scope note:* the course's advanced early-infertile counting rules (−21-day,
-Döring −8, 5/3-day) are contraceptive-precision rules needing 6–12 logged cycles;
-they are intentionally **not** implemented — `infertile_pre` is simply menses →
-first mucus.
+*Scope note:* STM's advanced early-infertile counting rules (−21-day, Döring −8,
+5/3-day) are contraceptive-precision rules needing 6–12 logged cycles; they are
+intentionally **not** implemented — `infertile_pre` is simply menses → first
+mucus.
 
-**Physiological guard.** The course states the longest luteal phase is ~16 days,
-so a detected shift implying a longer luteal is treated as a false-early shift
+**Physiological guard.** The luteal phase runs to ~16 days at most, so a detected
+shift implying a longer luteal is treated as a false-early shift
 (common in long PMOS cycles): it is skipped and scanning continues for a
 plausible later shift. If one is found the cycle is ovulatory with a realistic
 luteal; if not it is `anovulatory` — either way `suspect_ovulation` records that
@@ -140,7 +140,7 @@ On the real data (coverline margin 0.2 °C): **14/20 cycles ovulatory (70%)**, 6
 cycles with a guard-rejected suspect shift, 23% `unknown`, and a clean biphasic
 BBT signal (follicular ≈ 36.50 °C < luteal ≈ 36.83 °C — the guard *sharpens* this
 by keeping follicular-temperature days out of luteal). Detection is stable across
-0.15–0.30 °C, so the course's 0.2 needs no tuning; see
+0.15–0.30 °C, so the standard 0.2 needs no tuning; see
 `scripts/sweep_ovulation_threshold.py`.
 
 ### `cycle_summary` — one row per cycle, with anomaly flags (20 rows)
@@ -157,7 +157,7 @@ Materialized from the same inference. PK `cycle_number`.
 | `peak_day` | DATE | last peak-type mucus day (`csúcsnap`) |
 | `confirmation_day` | DATE | cross-checked: `max(temp_confirm, peak + 3)` |
 | `follicular_days` / `luteal_days` | INTEGER | phase lengths around a detected ovulation |
-| `short_luteal` | BOOLEAN **NN** | luteal ≤ 10 days — the course's low-progesterone flag |
+| `short_luteal` | BOOLEAN **NN** | luteal ≤ 10 days — the STM low-progesterone flag |
 | `suspect_ovulation` | BOOLEAN **NN** | a thermal shift was detected but skipped by the >16-day-luteal guard |
 | `cycle_length_z` / `luteal_length_z` | DOUBLE | z-score vs population norms |
 | `cycle_length_flag` / `luteal_length_flag` | BOOLEAN | |z| > 2σ (NULL if length unknown) |

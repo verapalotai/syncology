@@ -6,6 +6,9 @@ readme = "README.md"
 requires-python = ">=3.13,<3.14"
 dependencies = [
     "duckdb>=1.1",
+    "polars>=1.9",
+    "pyarrow>=17",
+    "pytz>=2024.1",
     "python-dateutil>=2.9",
     "pydantic>=2.9",
 ]
@@ -15,7 +18,6 @@ dependencies = [
 labs = ["pdfplumber>=0.11"]
 llm = ["instructor>=1.6", "anthropic>=0.40"]
 graph = ["kuzu>=0.6"]
-tabular = ["polars>=1.9"]
 
 [dependency-groups]
 dev = ["pytest>=8.3", "ruff>=0.7"]

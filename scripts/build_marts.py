@@ -42,6 +42,28 @@ def main() -> None:
     fertile = con.execute("SELECT count(*) FROM cycle_phases WHERE fertile_window").fetchone()[0]
     print(f"  fertile_window days: {fertile}")
 
+    print(f"\ncycle_summary  (coverline shift_c = {stats.shift_c} °C):")
+    print(f"  cycles              : {stats.n_cycles}")
+    print(f"  ovulatory (detected): {stats.n_ovulatory_cycles}"
+          f"  ({stats.n_ovulatory_cycles / (stats.n_cycles or 1):.0%})")
+    print(f"  flagged vs norms    : {stats.n_flagged_cycles}")
+    flagged = con.execute(
+        """
+        SELECT cycle_number, cycle_start, cycle_length_days, round(cycle_length_z, 1) AS cz,
+               luteal_days, round(luteal_length_z, 1) AS lz, short_luteal
+        FROM cycle_summary
+        WHERE cycle_length_flag OR luteal_length_flag
+        ORDER BY cycle_start
+        """
+    ).fetchall()
+    for num, start, length, cz, luteal, lz, short in flagged:
+        reasons = []
+        if cz is not None and abs(cz) > marts.FLAG_SIGMA:
+            reasons.append(f"cycle_len {length}d z={cz:+}")
+        if lz is not None and abs(lz) > marts.FLAG_SIGMA:
+            reasons.append(f"luteal {luteal}d z={lz:+}" + (" SHORT" if short else ""))
+        print(f"    cycle {num:<2} {start}  " + "; ".join(reasons))
+
     print("\nExample cross-domain query — avg BBT by cycle phase:")
     rows = con.execute(
         """

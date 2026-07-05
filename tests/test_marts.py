@@ -109,16 +109,21 @@ def test_idempotent_rebuild(con):
     assert first == second
 
 
-def _biphasic_cycle(con, start: date, *, cycle_len: int, high=36.60):
-    """Insert one clean biphasic cycle starting at `start`, next menses at cycle_len."""
+def _biphasic_cycle(con, start: date, *, cycle_len: int, low_days: int = 11, high=36.60):
+    """Insert one clean biphasic cycle; ovulation lands at start + (2 + low_days).
+
+    ``low_days`` low readings before the shift place ovulation realistically
+    (default 11 -> ovulation on day 14), so a normal cycle_len yields a
+    physiological luteal.
+    """
     for i in range(3):  # menses
         _measure(con, "MenstrualFlow", day=start + timedelta(days=i),
                  string="HKCategoryValueVaginalBleedingMedium")
     low_start = start + timedelta(days=3)
-    for i in range(6):  # low follicular
+    for i in range(low_days):  # low follicular
         _measure(con, "BasalBodyTemperature", day=low_start + timedelta(days=i), num=36.30)
     for i in range(3):  # thermal shift
-        _measure(con, "BasalBodyTemperature", day=low_start + timedelta(days=6 + i), num=high)
+        _measure(con, "BasalBodyTemperature", day=low_start + timedelta(days=low_days + i), num=high)
     # next cycle's menses onset defines this cycle's length
     _measure(con, "MenstrualFlow", day=start + timedelta(days=cycle_len),
              string="HKCategoryValueVaginalBleedingMedium")
@@ -126,7 +131,7 @@ def _biphasic_cycle(con, start: date, *, cycle_len: int, high=36.60):
 
 def test_cycle_summary_lengths_and_ovulation(con):
     start = date(2025, 5, 1)
-    _biphasic_cycle(con, start, cycle_len=28)
+    _biphasic_cycle(con, start, cycle_len=28)  # ovulation on day 14, luteal 15
     marts.apply(con)
     row = con.execute(
         "SELECT cycle_length_days, ovulation_day, follicular_days, luteal_days, anovulatory "
@@ -134,9 +139,9 @@ def test_cycle_summary_lengths_and_ovulation(con):
     ).fetchone()
     length, ov, follic, luteal, anov = row
     assert length == 28
-    assert ov == start + timedelta(days=8)  # last low day (low_start + 5)
-    assert follic == 9   # start..ovulation inclusive
-    assert luteal == 20  # ovulation..next menses onset
+    assert ov == start + timedelta(days=13)  # last low day (low_start + 10)
+    assert follic == 14  # start..ovulation inclusive
+    assert luteal == 15  # ovulation..next menses onset
     assert anov is False
 
 
@@ -236,7 +241,7 @@ def _cycle_with_mucus_and_shift(con, start: date):
         _measure(con, "BasalBodyTemperature", day=low_start + timedelta(days=6 + i), num=36.60)
     _measure(con, "CervicalMucusQuality", day=start + timedelta(days=12),  # peak, later than temp
              string="HKCategoryValueCervicalMucusQualityEggWhite")
-    _measure(con, "MenstrualFlow", day=start + timedelta(days=30),  # next cycle
+    _measure(con, "MenstrualFlow", day=start + timedelta(days=22),  # next cycle (luteal 14d)
              string="HKCategoryValueVaginalBleedingMedium")
 
 
@@ -262,6 +267,61 @@ def test_fertility_zones(con):
     assert zone[start] == "infertile_pre"                       # menses, before mucus
     assert zone[start + timedelta(days=6)] == "fertile"          # after change point
     assert zone[start + timedelta(days=20)] == "infertile_post"  # after confirmation
+
+
+def test_guard_rejects_false_early_shift_as_suspect(con):
+    # A long cycle whose only thermal shift is early -> implied luteal > 16d.
+    # The guard skips it: no ovulation, but suspect_ovulation is recorded.
+    start = date(2025, 2, 1)
+    for i in range(3):
+        _measure(con, "MenstrualFlow", day=start + timedelta(days=i),
+                 string="HKCategoryValueVaginalBleedingMedium")
+    low_start = start + timedelta(days=3)
+    for i in range(6):
+        _measure(con, "BasalBodyTemperature", day=low_start + timedelta(days=i), num=36.30)
+    for i in range(3):  # early shift ~day 12; next menses is far away
+        _measure(con, "BasalBodyTemperature", day=low_start + timedelta(days=6 + i), num=36.60)
+    _measure(con, "MenstrualFlow", day=start + timedelta(days=50),  # very long cycle
+             string="HKCategoryValueVaginalBleedingMedium")
+    marts.apply(con)
+    ov, luteal, suspect, anov = con.execute(
+        "SELECT ovulation_day, luteal_days, suspect_ovulation, anovulatory "
+        "FROM cycle_summary WHERE cycle_number = 1"
+    ).fetchone()
+    assert ov is None          # early shift rejected, no plausible later one
+    assert luteal is None
+    assert suspect is True
+    assert anov is True
+
+
+def test_guard_accepts_plausible_later_shift(con):
+    # An early false shift, then a genuine later shift yielding a ~13d luteal.
+    start = date(2025, 3, 1)
+    for i in range(3):
+        _measure(con, "MenstrualFlow", day=start + timedelta(days=i),
+                 string="HKCategoryValueVaginalBleedingMedium")
+    # early false shift around day 10 (would imply luteal ~30d -> skipped)
+    early = start + timedelta(days=4)
+    for i in range(6):
+        _measure(con, "BasalBodyTemperature", day=early + timedelta(days=i), num=36.30)
+    for i in range(3):
+        _measure(con, "BasalBodyTemperature", day=early + timedelta(days=6 + i), num=36.55)
+    # temps settle back low, then a real shift later; next menses ~13d after it
+    real_low = start + timedelta(days=20)
+    for i in range(6):
+        _measure(con, "BasalBodyTemperature", day=real_low + timedelta(days=i), num=36.30)
+    for i in range(3):
+        _measure(con, "BasalBodyTemperature", day=real_low + timedelta(days=6 + i), num=36.65)
+    ov_day = real_low + timedelta(days=5)  # last low before the real rise
+    _measure(con, "MenstrualFlow", day=ov_day + timedelta(days=13),
+             string="HKCategoryValueVaginalBleedingMedium")
+    marts.apply(con)
+    ov, luteal, suspect = con.execute(
+        "SELECT ovulation_day, luteal_days, suspect_ovulation FROM cycle_summary WHERE cycle_number = 1"
+    ).fetchone()
+    assert ov == ov_day        # the later, plausible shift was chosen
+    assert luteal == 13
+    assert suspect is True      # the early shift was skipped along the way
 
 
 def test_short_luteal_flag(con):

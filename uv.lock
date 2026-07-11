@@ -940,6 +940,7 @@ labs = [
 llm = [
     { name = "anthropic" },
     { name = "instructor" },
+    { name = "openai" },
 ]
 
 [package.dev-dependencies]
@@ -954,6 +955,7 @@ requires-dist = [
     { name = "duckdb", specifier = ">=1.1" },
     { name = "instructor", marker = "extra == 'llm'", specifier = ">=1.6" },
     { name = "kuzu", marker = "extra == 'graph'", specifier = ">=0.6" },
+    { name = "openai", marker = "extra == 'llm'", specifier = ">=1.40" },
     { name = "pdfplumber", marker = "extra == 'labs'", specifier = ">=0.11" },
     { name = "polars", specifier = ">=1.9" },
     { name = "pyarrow", specifier = ">=17" },

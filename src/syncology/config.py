@@ -18,6 +18,11 @@ load_dotenv()  # populate os.environ from .env if present; no-op if absent
 # model; note the cost in write-ups. Kept here so callers don't hard-code ids.
 BULK_MODEL = "claude-haiku-4-5-20251001"
 
+# Local inference (Ollama, OpenAI-compatible). Used for the most sensitive data
+# (lab blood panels) so values never leave the machine. Override via env.
+OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434/v1")
+LOCAL_MODEL = os.environ.get("SYNCOLOGY_LOCAL_MODEL", "gemma4")
+
 
 @lru_cache
 def anthropic_api_key() -> str:

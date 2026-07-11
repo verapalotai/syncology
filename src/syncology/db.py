@@ -32,6 +32,16 @@ CREATE TABLE IF NOT EXISTS measurements (
     correlation_id  VARCHAR
 );
 
+CREATE TABLE IF NOT EXISTS workouts (
+    row_key         VARCHAR PRIMARY KEY,
+    workout_type    VARCHAR NOT NULL,
+    start_ts        TIMESTAMPTZ NOT NULL,
+    end_ts          TIMESTAMPTZ,
+    duration_s      DOUBLE,
+    source          VARCHAR NOT NULL,
+    source_version  VARCHAR
+);
+
 CREATE TABLE IF NOT EXISTS activity_summary (
     date_components     VARCHAR PRIMARY KEY,
     active_energy       DOUBLE,

@@ -139,6 +139,25 @@ def _num(value: str | None) -> float | None:
         return None
 
 
+def _workout_row(el: ET.Element, parse_ts) -> tuple:
+    """A discrete workout event: type, interval, duration in seconds."""
+    wtype = el.get("workoutActivityType", "").replace("HKWorkoutActivityType", "")
+    duration = _num(el.get("duration"))
+    unit = (el.get("durationUnit") or "").lower()
+    duration_s = duration * 60 if (duration is not None and unit == "min") else duration
+    start, end = el.get("startDate"), el.get("endDate")
+    key = _row_key(wtype, el.get("sourceName", ""), start, end, str(duration or ""))
+    return (
+        key,
+        wtype,
+        parse_ts(start),
+        parse_ts(end),
+        duration_s,
+        el.get("sourceName"),
+        el.get("sourceVersion"),
+    )
+
+
 def _activity_summary_row(el: ET.Element) -> tuple:
     return (
         el.get("dateComponents"),
@@ -171,6 +190,7 @@ def parse(
 
     batch: list[tuple] = []
     activity_batch: list[tuple] = []
+    workout_batch: list[tuple] = []
     correlation_stack: list[str] = []
     seen: set[str] = set()
     # row_key -> correlation_id for records that appear inside a Correlation.
@@ -197,6 +217,14 @@ def parse(
             activity_batch,
         )
         activity_batch.clear()
+
+    def flush_workouts() -> None:
+        if not workout_batch:
+            return
+        con.executemany(
+            "INSERT OR IGNORE INTO workouts VALUES (?, ?, ?, ?, ?, ?, ?)", workout_batch
+        )
+        workout_batch.clear()
 
     def record_row(el: ET.Element, correlation_id: str | None) -> tuple | None:
         metric, kind = _clean_metric(el.get("type", ""))
@@ -279,6 +307,9 @@ def parse(
             el.clear()
         elif tag == "Workout":
             stats.workouts += 1
+            workout_batch.append(_workout_row(el, parse_ts))
+            if len(workout_batch) >= batch_size:
+                flush_workouts()
             el.clear()
 
         depth -= 1
@@ -289,6 +320,7 @@ def parse(
 
     flush_measurements()
     flush_activity()
+    flush_workouts()
 
     if corr_of:
         corr_map = pl.DataFrame(  # noqa: F841 — referenced by DuckDB replacement scan

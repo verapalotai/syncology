@@ -18,6 +18,7 @@ import argparse
 from collections import Counter
 
 from syncology import db
+from syncology.resolve import reference_ranges
 from syncology.resolve.biomarkers import REGISTRY, RuleResolver
 
 
@@ -113,6 +114,45 @@ def main() -> None:
         """
     ).fetchone()[0]
     print(f"\nbiomarkers measured on >= 3 dates (trendable): {multi}")
+
+    # Temporal reference ranges: a lab revises its intervals over time, so a
+    # result is judged against the range in effect on its date.
+    reference_ranges.build(con)
+    changing = con.execute(
+        """
+        SELECT key, count(*) AS eras FROM biomarker_reference_ranges
+        GROUP BY key HAVING eras > 1 ORDER BY eras DESC
+        """
+    ).fetchall()
+    print(f"\nbiomarkers whose reference range CHANGED over time: {len(changing)}")
+    for key, eras in changing:
+        spans = con.execute(
+            """
+            SELECT ref_low, ref_high, valid_from, valid_to
+            FROM biomarker_reference_ranges WHERE key = ? ORDER BY valid_from
+            """,
+            [key],
+        ).fetchall()
+        segs = "  ".join(
+            f"[{lo}-{hi}] {vf}→{vt or 'now'}" for lo, hi, vf, vt in spans
+        )
+        print(f"  {key:<20} {eras} eras: {segs}")
+    # Why it matters: results whose verdict would flip vs the current range.
+    flips = con.execute(
+        """
+        WITH cur AS (
+            SELECT key, ref_low, ref_high FROM biomarker_reference_ranges
+            WHERE valid_to IS NULL
+        )
+        SELECT count(*) FROM lab_results_ranged r JOIN cur c ON r.canonical_key = c.key
+        WHERE r.value_num IS NOT NULL AND r.asof_status IS NOT NULL
+          AND r.asof_status <> (
+              CASE WHEN r.value_num < c.ref_low THEN 'low'
+                   WHEN c.ref_high IS NOT NULL AND r.value_num > c.ref_high THEN 'high'
+                   ELSE 'normal' END)
+        """
+    ).fetchone()[0]
+    print(f"results whose in-range verdict flips vs the current range: {flips}")
     print("=" * 60)
     con.close()
 

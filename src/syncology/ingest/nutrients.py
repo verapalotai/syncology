@@ -80,3 +80,38 @@ def build(con: duckdb.DuckDBPyConnection, fdc_dir: str | Path) -> int:
     )
     con.execute("CREATE UNIQUE INDEX IF NOT EXISTS foods_pk ON foods(fdc_id)")
     return con.execute("SELECT count(*) FROM foods").fetchone()[0]
+
+
+def build_ingredients(con: duckdb.DuckDBPyConnection, fdc_dir: str | Path) -> tuple[int, int]:
+    """Build ``ingredients`` + ``food_ingredients`` from FDC ``input_food.csv``.
+
+    ``input_food`` documents the component foods of composite (Foundation / survey)
+    foods — the source for the graph's ``Ingredient`` nodes and ``COMPOSED_OF``
+    edges. Returns ``(n_ingredients, n_food_ingredient_links)``.
+    """
+    d = Path(fdc_dir)
+    con.execute("DROP TABLE IF EXISTS food_ingredients")
+    con.execute(
+        f"""
+        CREATE TABLE food_ingredients AS
+        SELECT i.fdc_id, i.seq_num,
+               lower(trim(i.sr_description)) AS ingredient_key,
+               i.sr_description AS ingredient_name,
+               i.gram_weight
+        FROM read_csv_auto('{d}/input_food.csv') i
+        WHERE i.sr_description IS NOT NULL
+          AND i.fdc_id IN (SELECT fdc_id FROM foods)
+        """
+    )
+    con.execute("DROP TABLE IF EXISTS ingredients")
+    con.execute(
+        """
+        CREATE TABLE ingredients AS
+        SELECT ingredient_key AS key, any_value(ingredient_name) AS name,
+               count(DISTINCT fdc_id) AS n_foods
+        FROM food_ingredients GROUP BY ingredient_key
+        """
+    )
+    n_ing = con.execute("SELECT count(*) FROM ingredients").fetchone()[0]
+    n_link = con.execute("SELECT count(*) FROM food_ingredients").fetchone()[0]
+    return n_ing, n_link

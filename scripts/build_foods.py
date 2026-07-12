@@ -32,12 +32,14 @@ def main() -> None:
     con = db.connect(args.db)
     t0 = time.perf_counter()
     n = nutrients.build(con, args.fdc)
+    n_ing, n_link = nutrients.build_ingredients(con, args.fdc)
     dt = time.perf_counter() - t0
 
     print("=" * 60)
     print("FOODS (USDA FoodData Central)")
     print("=" * 60)
     print(f"foods rows: {n:,}   (built in {dt:.0f}s)")
+    print(f"ingredients: {n_ing:,}   food→ingredient links: {n_link:,}")
 
     print("\nBy data_type:")
     for t, c in con.execute(

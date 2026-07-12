@@ -265,6 +265,25 @@ disambiguation by unit** (`Fehérvérsejt` at `/ltr(H)` → urine WBC vs
 `biomarker` (EN name), `category`, `canonical_unit`. Makes a biomarker trendable
 across panels regardless of how it was named (64 biomarkers have ≥3 dates).
 
+### `biomarker_reference_ranges` — temporal reference intervals
+
+A lab **revises its reference intervals over time** (new method / population), so
+each biomarker's ranges form a timeline, not a single value. One row per
+contiguous *era* (change-point segmentation of the observed panels — an interval
+that recurs later gets its own era, so lab-to-lab flip-flops are handled):
+`key` · `ref_low` · `ref_high` · `unit` · `n_panels` · `valid_from` · `valid_to`
+(NULL = currently in effect). On the real data 5 biomarkers changed (SHBG
+27.8→32.4→17.7; total testosterone narrowed 0.42–2.06 → 0.29–1.21; AMH, MCHC,
+RBC). Use `resolve.reference_ranges.asof(key, date)` / `evaluate(key, date, value)`
+to judge any result against the range **in effect on its date**.
+
+### `lab_results_ranged` (view, 755 rows)
+
+Each result joined to the range valid on its `panel_date`, with `asof_low` /
+`asof_high` / `asof_status` (`low` / `normal` / `high`). 2 historical results
+flip their in-range verdict versus the current range — the reason the timeline
+matters.
+
 ---
 
 ## Activity layer
@@ -310,9 +329,10 @@ activity so one traversal answers cross-domain questions. Built from the DuckDB
 marts via Parquet (`scripts/build_graph.py`).
 
 **Nodes:** `Day` (date, phase, cycle_day, fertility_zone) · `CyclePhase` ·
-`Biomarker` · `LabResult` · `ReferenceRange` (one per *distinct* interval per
-biomarker, `n_panels` ranked — SHBG/testosterone/RBC/AMH/MCHC carry 2–3) ·
-`Nutrient` · `Food` (Yazio meal correlations) · `Symptom` (cycle signs) ·
+`Biomarker` · `LabResult` (dated) · `ReferenceRange` (one per interval *era* per
+biomarker, carrying `valid_from`/`valid_to` — an as-of `WHERE valid_from <= date
+AND (valid_to IS NULL OR date <= valid_to)` finds the range in effect at any
+time) · `Nutrient` · `Food` (Yazio meal correlations) · `Symptom` (cycle signs) ·
 `Activity`. `Ingredient` is modeled but unpopulated (awaits the food-composition
 lookup, §5.8).
 

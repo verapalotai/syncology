@@ -9,6 +9,7 @@ dependencies = [
     "polars>=1.9",
     "pyarrow>=17",
     "pytz>=2024.1",
+    "numpy>=1.26",
     "python-dateutil>=2.9",
     "pydantic>=2.9",
     "python-dotenv>=1.0",

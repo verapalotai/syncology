@@ -38,10 +38,25 @@ flowchart LR
   CD -->|sympto-thermal inference| CP[(cycle_phases)]
   CD -->|sympto-thermal inference| CS[(cycle_summary)]
 
+  PDF[lab PDFs] -->|local/API LLM extract| LR[(lab_results)]
+  BM[(biomarker_map)] --> LC[/lab_results_canonical/]
+  BR[(biomarker_registry)] --> LC
+  LR --> LC
+
+  STV[strava.csv] --> ACT[(activities)]
+  XML -->|Workout| WK[(workouts)]
+  WK --> ACT
+  ACT --> DAE[/daily_activity_events/]
+
+  LC --> KG[(Kuzu graph)]
+  CP --> KG
+  DN --> KG
+  ACT --> KG
+
   classDef tbl fill:#e8f0fe,stroke:#4285f4;
   classDef view fill:#e6f4ea,stroke:#34a853;
-  class M,AS,MC,CVM,CP,CS tbl;
-  class CAT,DA,DN,CD view;
+  class M,AS,MC,CVM,CP,CS,LR,BM,BR,WK,ACT,KG tbl;
+  class CAT,DA,DN,CD,LC,DAE view;
 ```
 
 Rectangles with square brackets are base tables; parallelograms (slashes) are
@@ -205,6 +220,118 @@ feeds phase inference. ~1.8 yr of Tempdrop coverage.
 
 ---
 
+## Labs layer
+
+Blood-panel PDFs → structured biomarkers, then canonicalized across languages and
+naming variants. Extraction runs locally (Ollama) or via the Anthropic API; see
+`docs/` reports. Resolution is rule-based (a curated alias dictionary) with an LLM
+resolver for comparison (write-up #1).
+
+### `lab_results` — extracted biomarkers (755 rows)
+
+One row per analyte per panel, names kept **as written** (Hungarian).
+
+| column | type | notes |
+|---|---|---|
+| `row_key` | VARCHAR **PK** | hash of `(source_file, test, date)` — idempotent load |
+| `panel_date` | DATE **NN** | authoritative date from the `lab_YYYYMMDD.pdf` filename |
+| `source_file` | VARCHAR **NN** | source PDF |
+| `test_name` | VARCHAR **NN** | analyte name as written, e.g. `Follikulus stimuláló hormon (FSH)` |
+| `value_num` / `value_str` | DOUBLE / VARCHAR | numeric or qualitative result |
+| `unit` | VARCHAR | e.g. `mIU/L`, `nmol/L` |
+| `ref_low` / `ref_high` / `ref_text` | DOUBLE / DOUBLE / VARCHAR | reference interval |
+| `flag` | VARCHAR | `H` / `L` if abnormal |
+| `model` | VARCHAR | extracting model (provenance) |
+
+Coverage 2021-09 → 2025-12, 22 panels, **148 distinct raw test names**.
+
+### `biomarker_registry` — canonical vocabulary (84 rows)
+
+`key` (**PK**, snake_case) · `name_en` · `category` (hematology / hormone / thyroid
+/ lipid / liver / kidney / iron / vitamin / electrolyte / urinalysis / …) · `unit`
+· `specimen` (`blood` / `urine`). The target vocabulary for resolution.
+
+### `biomarker_map` — raw → canonical (148 rows)
+
+`raw_name` (**PK**) → `canonical_key`, with the `method` (`exact` / `abbrev` /
+`base` / `fuzzy` / `none`) and `score`. Handles the `(A)` lab-section suffix,
+parenthetical abbreviations (`(FSH)`), HU↔EN synonyms, and **specimen
+disambiguation by unit** (`Fehérvérsejt` at `/ltr(H)` → urine WBC vs
+`Fehérvérsejtszám` at `Giga/L` → blood WBC).
+
+### `lab_results_canonical` (view, 755 rows)
+
+`lab_results` joined to its biomarker — every result tagged with `canonical_key`,
+`biomarker` (EN name), `category`, `canonical_unit`. Makes a biomarker trendable
+across panels regardless of how it was named (64 biomarkers have ≥3 dates).
+
+---
+
+## Activity layer
+
+Discrete exercise events unified from Strava and Apple Health workouts — the
+graph's `Activity` node source.
+
+### `workouts` — Apple Health workout events (2 rows)
+
+`row_key` (**PK**) · `workout_type` · `start_ts` / `end_ts` · `duration_s` ·
+`source`. Currently the 2 Slopes ski sessions (no watch yet); distance/energy are
+enriched from the in-window Slopes `measurements`.
+
+### `activities` — unified activity events (147 rows)
+
+| column | type | notes |
+|---|---|---|
+| `activity_id` | VARCHAR **PK** | `strava-<id>` or `apple-<hash>` |
+| `source` | VARCHAR **NN** | `strava` / `apple_workout` |
+| `activity_type` | VARCHAR **NN** | `run` / `ride` / `hike` / `ski` / … (Spanish Strava types mapped) |
+| `name` | VARCHAR | activity title |
+| `start_ts` / `end_ts` | TIMESTAMPTZ | |
+| `duration_s` / `moving_s` | DOUBLE | |
+| `distance_km` / `elevation_gain_m` | DOUBLE | |
+| `avg_speed` / `max_speed` | DOUBLE | |
+| `energy_kcal` | DOUBLE | ski sessions (from Slopes) |
+
+145 Strava + 2 Apple, 2023-11 → 2026-06, 8 types. *Known limit:* a ski day logged
+in both Slopes and Strava appears as two events (cross-source dedup not done).
+
+### `daily_activity_events` (view)
+
+Per local day: `n_activities`, `active_minutes`, `distance_km`, `activity_types`.
+Complements `daily_activity` (which is step/energy telemetry) with discrete
+sessions — so "what *kind* of training on this day" is answerable.
+
+---
+
+## Knowledge graph (Kuzu)
+
+The integration layer: a `Day` spine ties labs, cycle phase, nutrition, and
+activity so one traversal answers cross-domain questions. Built from the DuckDB
+marts via Parquet (`scripts/build_graph.py`).
+
+**Nodes:** `Day` (date, phase, cycle_day, fertility_zone) · `CyclePhase` ·
+`Biomarker` · `LabResult` · `ReferenceRange` (one per *distinct* interval per
+biomarker, `n_panels` ranked — SHBG/testosterone/RBC/AMH/MCHC carry 2–3) ·
+`Nutrient` · `Food` (Yazio meal correlations) · `Symptom` (cycle signs) ·
+`Activity`. `Ingredient` is modeled but unpopulated (awaits the food-composition
+lookup, §5.8).
+
+**Edges:** `LabResult-MEASURED_AS→Biomarker`, `LabResult-RESULT_ON→Day`,
+`ReferenceRange-REF_FOR→Biomarker`, `Day-IN_PHASE→CyclePhase`,
+`Activity-PERFORMED_ON→Day`, `Day-INTAKE_ON→Nutrient` (amount),
+`Food-FOOD_LOGGED_ON→Day`, `Food-CONTAINS→Nutrient` (amount),
+`Symptom-OBSERVED_ON→Day` (value); `Food-COMPOSED_OF→Ingredient` modeled/empty.
+
+Example — hormone results by inferred cycle phase (Cypher):
+
+```cypher
+MATCH (b:Biomarker)<-[:MEASURED_AS]-(l:LabResult)-[:RESULT_ON]->(d:Day)-[:IN_PHASE]->(p:CyclePhase)
+WHERE b.category = 'hormone'
+RETURN p.name, count(*) ORDER BY count(*) DESC
+```
+
+---
+
 ## Example cross-domain queries
 
 Average BBT by inferred cycle phase (the A1 definition-of-done query):
@@ -231,7 +358,11 @@ GROUP BY 1;
 ## Rebuild
 
 ```bash
-uv run python scripts/parse_apple_health.py      # measurements + activity_summary + metric_catalog
+uv run python scripts/parse_apple_health.py      # measurements + activity_summary + workouts + metric_catalog
 uv run python scripts/normalize_categories.py    # category_value_map + measurements_categorized
-uv run python scripts/build_marts.py             # daily_* + cycle_days + cycle_phases
+uv run python scripts/build_marts.py             # daily_* + cycle_days + cycle_phases + cycle_summary
+uv run python scripts/extract_labs.py            # lab_results (local or --engine api)
+uv run python scripts/resolve_biomarkers.py      # biomarker_registry + biomarker_map + lab_results_canonical
+uv run python scripts/build_activities.py        # activities + workouts → daily_activity_events
+uv run python scripts/build_graph.py             # Kuzu knowledge graph + demo traversals
 ```

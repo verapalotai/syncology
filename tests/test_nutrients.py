@@ -58,3 +58,21 @@ def test_nutrient_columns_match_registry(fdc_dir):
     cols = {c[1] for c in con.execute("PRAGMA table_info('foods')").fetchall()}
     for _nid, (col, _unit) in nutrients.NUTRIENTS.items():
         assert col in cols
+
+
+def test_build_ingredients(fdc_dir):
+    # a composite curated food (fdc 2) made of two input foods; branded excluded
+    (fdc_dir / "input_food.csv").write_text(
+        "id,fdc_id,fdc_id_of_input_food,seq_num,amount,sr_code,sr_description,unit,"
+        "portion_code,portion_description,gram_weight,retention_code\n"
+        "1,2,100,1,1,,Chicken,g,,,150,\n"
+        "2,2,200,2,1,,Salt,g,,,2,\n"
+        "3,3,300,1,1,,US filler,g,,,10,\n"  # fdc 3 is branded, not in foods
+    )
+    con = duckdb.connect(":memory:")
+    nutrients.build(con, fdc_dir)
+    n_ing, n_link = nutrients.build_ingredients(con, fdc_dir)
+    assert n_ing == 2  # chicken, salt
+    assert n_link == 2  # only the curated food's links (branded fdc 3 excluded)
+    keys = {r[0] for r in con.execute("SELECT key FROM ingredients").fetchall()}
+    assert keys == {"chicken", "salt"}

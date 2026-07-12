@@ -44,14 +44,15 @@ _NODE_SQL: dict[str, str] = {
     "Biomarker": "SELECT key, name_en, category, unit FROM biomarker_registry",
     "LabResult": "SELECT row_key AS id, value_num AS value, unit, flag, panel_date FROM lab_results",
     "ReferenceRange": """
-        SELECT canonical_key || '_ref' AS id, ref_low AS low, ref_high AS high, canonical_unit AS unit
+        SELECT canonical_key || '_ref' || CAST(rn AS VARCHAR) AS id,
+               ref_low AS low, ref_high AS high, canonical_unit AS unit, n_panels
         FROM (
-            SELECT canonical_key, ref_low, ref_high, canonical_unit,
+            SELECT canonical_key, ref_low, ref_high, canonical_unit, count(*) AS n_panels,
                    row_number() OVER (PARTITION BY canonical_key ORDER BY count(*) DESC) rn
             FROM lab_results_canonical
             WHERE canonical_key IS NOT NULL AND (ref_low IS NOT NULL OR ref_high IS NOT NULL)
             GROUP BY canonical_key, ref_low, ref_high, canonical_unit
-        ) WHERE rn = 1
+        )
     """,
     "Nutrient": """
         SELECT metric AS key, replace(metric, 'Dietary', '') AS name, any_value(unit) AS unit
@@ -62,7 +63,7 @@ _NODE_SQL: dict[str, str] = {
         FROM measurements WHERE correlation_id IS NOT NULL GROUP BY correlation_id
     """,
     "Activity": f"SELECT activity_id AS id, activity_type, {_LOCAL_TS} AS start_ts, "
-                f"duration_s, distance_km FROM activities",
+                f"duration_s, distance_km, energy_kcal FROM activities",
     "Symptom": """
         SELECT * FROM (VALUES
             ('cervical_mucus','Cervical mucus','cycle'),
@@ -81,12 +82,12 @@ _REL_SQL: dict[str, str] = {
     """,
     "RESULT_ON": "SELECT row_key AS src, panel_date AS dst FROM lab_results",
     "REF_FOR": """
-        SELECT canonical_key || '_ref' AS src, canonical_key AS dst FROM (
+        SELECT canonical_key || '_ref' || CAST(rn AS VARCHAR) AS src, canonical_key AS dst FROM (
             SELECT canonical_key, row_number() OVER (PARTITION BY canonical_key ORDER BY count(*) DESC) rn
             FROM lab_results_canonical
             WHERE canonical_key IS NOT NULL AND (ref_low IS NOT NULL OR ref_high IS NOT NULL)
             GROUP BY canonical_key, ref_low, ref_high, canonical_unit
-        ) WHERE rn = 1
+        )
     """,
     "IN_PHASE": "SELECT day AS src, phase AS dst FROM cycle_phases WHERE phase IS NOT NULL",
     "PERFORMED_ON": f"SELECT activity_id AS src, {_LOCAL_DAY} AS dst FROM activities",

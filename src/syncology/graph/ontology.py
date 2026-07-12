@@ -22,14 +22,18 @@ NODE_TABLES: tuple[str, ...] = (
     "unit STRING, PRIMARY KEY(key))",
     "CREATE NODE TABLE LabResult(id STRING, value DOUBLE, unit STRING, flag STRING, "
     "panel_date DATE, PRIMARY KEY(id))",
+    # One node per *distinct* reference interval per biomarker (not a single modal
+    # range): SHBG, total testosterone, RBC, AMH and MCHC each carry 2–3 across
+    # panels/methods. n_panels ranks how often each was used, so downstream can
+    # reconcile (pick the dominant, or flag disagreement).
     "CREATE NODE TABLE ReferenceRange(id STRING, low DOUBLE, high DOUBLE, unit STRING, "
-    "PRIMARY KEY(id))",
+    "n_panels INT64, PRIMARY KEY(id))",
     "CREATE NODE TABLE Nutrient(key STRING, name STRING, unit STRING, PRIMARY KEY(key))",
     "CREATE NODE TABLE Food(id STRING, source STRING, logged_ts TIMESTAMP, PRIMARY KEY(id))",
     "CREATE NODE TABLE Ingredient(key STRING, name STRING, PRIMARY KEY(key))",
     "CREATE NODE TABLE Symptom(key STRING, name STRING, category STRING, PRIMARY KEY(key))",
     "CREATE NODE TABLE Activity(id STRING, activity_type STRING, start_ts TIMESTAMP, "
-    "duration_s DOUBLE, distance_km DOUBLE, PRIMARY KEY(id))",
+    "duration_s DOUBLE, distance_km DOUBLE, energy_kcal DOUBLE, PRIMARY KEY(id))",
 )
 
 REL_TABLES: tuple[str, ...] = (

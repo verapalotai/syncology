@@ -22,12 +22,13 @@ NODE_TABLES: tuple[str, ...] = (
     "unit STRING, PRIMARY KEY(key))",
     "CREATE NODE TABLE LabResult(id STRING, value DOUBLE, unit STRING, flag STRING, "
     "panel_date DATE, PRIMARY KEY(id))",
-    # One node per *distinct* reference interval per biomarker (not a single modal
-    # range): SHBG, total testosterone, RBC, AMH and MCHC each carry 2–3 across
-    # panels/methods. n_panels ranks how often each was used, so downstream can
-    # reconcile (pick the dominant, or flag disagreement).
+    # One node per reference-interval *era* per biomarker, each with the validity
+    # window it was in effect (valid_to NULL = current). Labs revise intervals
+    # over time (SHBG, testosterone, RBC, AMH, MCHC all changed), so a result is
+    # judged against the range that was in effect on its date — see REF_FOR and
+    # the as-of lookup in resolve/reference_ranges.py.
     "CREATE NODE TABLE ReferenceRange(id STRING, low DOUBLE, high DOUBLE, unit STRING, "
-    "n_panels INT64, PRIMARY KEY(id))",
+    "n_panels INT64, valid_from DATE, valid_to DATE, PRIMARY KEY(id))",
     "CREATE NODE TABLE Nutrient(key STRING, name STRING, unit STRING, PRIMARY KEY(key))",
     "CREATE NODE TABLE Food(id STRING, source STRING, logged_ts TIMESTAMP, PRIMARY KEY(id))",
     "CREATE NODE TABLE Ingredient(key STRING, name STRING, PRIMARY KEY(key))",

@@ -4,6 +4,8 @@ subtitle: "A personal health knowledge graph, and the retrieval research that ca
 listing:
   contents:
     - docs/writeup_food_retrieval.qmd
+    - docs/writeup_biomarker_resolution.qmd
+    - docs/writeup_cycle_inference.qmd
   type: default
   sort: "date desc"
   fields: [title, subtitle, date, categories, reading-time]
@@ -17,8 +19,10 @@ warehouse** and a **Kuzu knowledge graph**, with entity resolution across biomar
 and foods. The infrastructure is the boring, necessary part; the interesting part is
 what the data forced me to figure out along the way.
 
-One of those problems turned into a small, rigorous retrieval study — the kind of
-result that only shows up when you stop trusting aggregate numbers and start putting
-confidence intervals on everything.
+Three of those problems turned into small, rigorous studies — entity resolution in two
+opposite regimes (an open cross-lingual vocabulary vs a small closed one), and inferring
+a menstrual cycle from irregular data. The through-line is method discipline: put
+confidence intervals on everything, match the tool to the regime, and say "unknown" when
+the data won't support a call.
 
 ## Write-ups

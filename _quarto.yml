@@ -6,6 +6,8 @@ project:
   render:
     - index.qmd
     - docs/writeup_food_retrieval.qmd
+    - docs/writeup_biomarker_resolution.qmd
+    - docs/writeup_cycle_inference.qmd
 
 website:
   title: "Syncology"
@@ -16,8 +18,14 @@ website:
     left:
       - href: index.qmd
         text: Home
-      - href: docs/writeup_food_retrieval.qmd
-        text: "Cross-lingual food retrieval"
+      - text: "Write-ups"
+        menu:
+          - href: docs/writeup_food_retrieval.qmd
+            text: "Cross-lingual food retrieval"
+          - href: docs/writeup_biomarker_resolution.qmd
+            text: "When rules beat the LLM"
+          - href: docs/writeup_cycle_inference.qmd
+            text: "Reading a cycle from noise"
     right:
       - icon: github
         href: "https://github.com/verapalotai/syncology"

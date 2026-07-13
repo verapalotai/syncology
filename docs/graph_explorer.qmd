@@ -21,7 +21,7 @@ Follow the nutrition chain — `Meal —EATEN→ Food —HAS_NUTRIENT→ Nutrien
 resolves to its canonical USDA food (with the portion in grams), and each food to its
 full nutrient profile. That's how the graph knows the *magnesium in the salmon* even
 though the food log only ever recorded calories and macros. Every food links to the same
-complete nutrient set — 5 shown here, all 16 in the real graph.
+complete nutrient set — 6 shown here, all 16 in the real graph.
 
 ::: {.callout-note appearance="simple"}
 Every value here is invented. No real measurements appear anywhere on this site — this
@@ -73,23 +73,14 @@ is the *structure*, not my data.
 <script src="https://cdn.jsdelivr.net/npm/cytoscape@3.30.2/dist/cytoscape.min.js"></script>
 <script>
 (function () {
-  // Distinct colour + shape per node *type* (Paul Tol palette — colourblind-safe).
-  var TYPE = {
-    Day:            { c:"#222222", s:"ellipse" },
-    CyclePhase:     { c:"#332288", s:"round-diamond" },
-    Symptom:        { c:"#88CCEE", s:"round-diamond" },
-    Biomarker:      { c:"#CC6677", s:"round-rectangle" },
-    LabResult:      { c:"#DDCC77", s:"round-rectangle" },
-    ReferenceRange: { c:"#999933", s:"round-rectangle" },
-    Meal:           { c:"#882255", s:"round-hexagon" },
-    Food:           { c:"#117733", s:"ellipse" },
-    Ingredient:     { c:"#44AA99", s:"round-triangle" },
-    Nutrient:       { c:"#AA4499", s:"round-tag" },
-    Activity:       { c:"#EE7733", s:"star" }
+  // Distinct colour per node type (Paul Tol palette — colourblind-safe).
+  var COLOR = {
+    Day:"#222222", CyclePhase:"#332288", Symptom:"#88CCEE", Biomarker:"#CC6677",
+    LabResult:"#DDCC77", ReferenceRange:"#999933", Meal:"#882255", Food:"#117733",
+    Ingredient:"#44AA99", Nutrient:"#AA4499", Activity:"#EE7733"
   };
   function n(id, label, type, props) {
-    var t = TYPE[type] || { c:"#888", s:"ellipse" };
-    return { data: { id:id, label:label, ntype:type, color:t.c, shape:t.s, props:props } };
+    return { data: { id:id, label:label, ntype:type, color:COLOR[type] || "#888", props:props } };
   }
   function e(s, t, rel, extra) { return { data: { source:s, target:t, rel:rel + (extra?" · "+extra:"") } }; }
 
@@ -119,48 +110,54 @@ is the *structure*, not my data.
     e("food_s","ing_salmon","COMPOSED_OF","150 g")
   ];
 
-  // Nutrients: 4 logged macros + one micro (magnesium — the "derived, never logged" one).
+  // Nutrients: 4 logged macros + two micros (magnesium, iron) the log never records.
+  // [key, label, unit, decimals, logged?]
   var NUTR = [
-    ["energy","Energy","kcal"], ["protein","Protein","g"], ["fat","Fat","g"],
-    ["carbohydrate","Carbohydrate","g"], ["magnesium","Magnesium","mg"]
+    ["energy","Energy","kcal",0,true], ["protein","Protein","g",1,true],
+    ["fat","Fat","g",1,true], ["carbohydrate","Carbohydrate","g",1,true],
+    ["magnesium","Magnesium","mg",0,false], ["iron","Iron","mg",1,false]
   ];
   var MACROS = ["energy","protein","fat","carbohydrate"];
   NUTR.forEach(function (x) {
-    var macro = MACROS.indexOf(x[0]) >= 0;
     nodes.push(n(x[0], x[1], "Nutrient",
-      { type: macro ? "macronutrient (logged + USDA)" : "micronutrient (USDA only — never logged)",
-        unit: x[2], amounts: "on the edges, not the node" }));
+      { type: x[4] ? "macronutrient" : "micronutrient (never logged — from USDA)", unit: x[2] }));
   });
 
-  // Foods: [id, label, per-100g in NUTR order]. Every food links to the SAME full set,
-  // generated below — so the profile is systematic, never cherry-picked.
+  // Real USDA foods (public reference data). [id, label, fdc_id, portion g, per-100g in NUTR order].
   var FOODS = [
-    ["food_o","Oatmeal, cooked",[71,2.5,1.5,12,27]],
-    ["food_b","Banana",[89,1.1,0.3,23,27]],
-    ["food_c","Chicken breast, grilled",[165,31,3.6,0,29]],
-    ["food_v","Roasted vegetables",[75,2.5,3,9,20]],
-    ["food_s","Salmon, cooked",[206,22,12,0,30]],
-    ["food_p","Sweet potato, baked",[90,2,0.2,21,27]]
+    ["food_o","Oatmeal, cooked",173905,200,[71,2.54,1.52,12,27,0.9]],
+    ["food_b","Banana",173944,120,[89,1.09,0.33,22.84,27,0.26]],
+    ["food_c","Chicken breast, roasted",171477,150,[165,31.02,3.57,0,29,1.04]],
+    ["food_v","Broccoli, boiled",169967,160,[35,2.38,0.41,7.18,21,0.67]],
+    ["food_s","Salmon, cooked",172001,150,[153,24.58,5.28,0,32,0.45]],
+    ["food_p","Sweet potato, baked",2709699,200,[82,1.64,0.39,17.98,20,0.42]]
   ];
+  var FLABEL = {};
   FOODS.forEach(function (f) {
-    nodes.push(n(f[0], f[1], "Food", { "fdc_id":"(synthetic)", note:"its full USDA nutrient profile is on the HAS_NUTRIENT edges" }));
-    NUTR.forEach(function (x, i) { edges.push(e(f[0], x[0], "HAS_NUTRIENT", f[2][i] + " " + x[2] + "/100g")); });
+    FLABEL[f[0]] = f[1];
+    var per100 = f[4], grams = f[3], props = { fdc_id: f[2], portion: grams + " g" };
+    NUTR.forEach(function (x, i) { props[x[1]] = (per100[i] * grams / 100).toFixed(x[3]) + " " + x[2]; });
+    nodes.push(n(f[0], f[1], "Food", props));  // props = the nutrient facts for this portion
+    NUTR.forEach(function (x, i) { edges.push(e(f[0], x[0], "HAS_NUTRIENT", per100[i] + " " + x[2] + "/100g")); });
   });
 
-  // Three realistic meals, each a main + a side, with the food portions in grams (EATEN)
-  // and the logged macro totals (CONTAINS).
+  // Three meals, each a main + a side. Real food names in `items`; logged macro totals on CONTAINS.
   var MEALS = [
-    ["m_bf","Breakfast","08:10",[["food_o","200 g"],["food_b","120 g"]],{energy:"250 kcal",protein:"6 g",fat:"4 g",carbohydrate:"50 g"}],
-    ["m_ln","Lunch","13:05",[["food_c","150 g"],["food_v","160 g"]],{energy:"430 kcal",protein:"50 g",fat:"11 g",carbohydrate:"18 g"}],
-    ["m_dn","Dinner","19:40",[["food_s","150 g"],["food_p","200 g"]],{energy:"490 kcal",protein:"37 g",fat:"18 g",carbohydrate:"42 g"}]
+    ["m_bf","Breakfast","08:10",["food_o","food_b"],{energy:"240 kcal",protein:"6 g",fat:"3.4 g",carbohydrate:"51 g"}],
+    ["m_ln","Lunch","13:05",["food_c","food_v"],{energy:"300 kcal",protein:"50 g",fat:"6 g",carbohydrate:"12 g"}],
+    ["m_dn","Dinner","19:40",["food_s","food_p"],{energy:"390 kcal",protein:"40 g",fat:"9 g",carbohydrate:"36 g"}]
   ];
   MEALS.forEach(function (m) {
-    nodes.push(n(m[0], m[1], "Meal", { logged: m[2], items: m[3].map(function (x) { return x[0].replace("food_",""); }).join(", ") }));
+    nodes.push(n(m[0], m[1], "Meal",
+      { logged_at: m[2], items: m[3].map(function (id) { return FLABEL[id]; }).join(" · ") }));
     edges.push(e(m[0], "day", "LOGGED_ON"));
-    m[3].forEach(function (fg) { edges.push(e(m[0], fg[0], "EATEN", fg[1])); });
+    m[3].forEach(function (fid) {
+      var f = FOODS.filter(function (z) { return z[0] === fid; })[0];
+      edges.push(e(m[0], fid, "EATEN", f[3] + " g"));
+    });
     MACROS.forEach(function (k) { edges.push(e(m[0], k, "CONTAINS", m[4][k])); });
   });
-  var DAY_TOTAL = { energy:"1170 kcal", protein:"93 g", fat:"33 g", carbohydrate:"110 g" };
+  var DAY_TOTAL = { energy:"930 kcal", protein:"96 g", fat:"18 g", carbohydrate:"99 g" };
   MACROS.forEach(function (k) { edges.push(e("day", k, "INTAKE_ON", DAY_TOTAL[k])); });
 
   var cy = cytoscape({
@@ -168,12 +165,13 @@ is the *structure*, not my data.
     elements: nodes.concat(edges),
     style: [
       { selector: "node", style: {
-          "background-color": "data(color)", "shape": "data(shape)", "label": "data(label)",
+          "background-color": "data(color)", "label": "data(label)",
           "color": "#222", "font-size": 10, "text-wrap": "wrap", "text-max-width": 92,
           "text-valign": "bottom", "text-margin-y": 3, "width": 24, "height": 24,
           "border-width": 2, "border-color": "#fff" } },
       { selector: 'node[ntype = "Day"]', style: { "width": 46, "height": 46, "font-size": 12, "font-weight": "bold" } },
       { selector: 'node[ntype = "Nutrient"]', style: { "width": 30, "height": 30 } },
+      { selector: 'node[ntype = "Meal"]', style: { "width": 30, "height": 30 } },
       { selector: "edge", style: {
           "font-size": 8, "color": "#555", "text-rotation": "autorotate",
           "text-background-color": "#fbfbfb", "text-background-opacity": 1, "text-background-padding": 2,

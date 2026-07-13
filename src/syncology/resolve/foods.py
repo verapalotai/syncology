@@ -191,6 +191,54 @@ def translate_food_names(
     return out
 
 
+def generate_hypothetical_docs(
+    names: list[str], model: str = config.BULK_MODEL, batch: int = 30
+) -> list[str]:
+    """HyDE (Gao et al. 2022): a hypothetical corpus-style entry per food name.
+
+    Instead of embedding the query name, embed an LLM-generated *hypothetical
+    document* that lives in the same space as the USDA descriptions — a generic
+    English food entry with a one-line description. Input names may be Hungarian /
+    German (HyDE-from-raw, translation folded in) or already English.
+    """
+    import instructor
+    from anthropic import Anthropic
+    from pydantic import BaseModel
+
+    class Docs(BaseModel):
+        docs: list[str]
+
+    client = instructor.from_anthropic(Anthropic(api_key=config.anthropic_api_key()))
+    out: list[str] = []
+    for i in range(0, len(names), batch):
+        chunk = names[i:i + batch]
+        numbered = "\n".join(f"{j + 1}. {n}" for j, n in enumerate(chunk))
+        res = client.messages.create(
+            model=model,
+            max_tokens=4096,
+            temperature=0,
+            max_retries=2,
+            messages=[
+                {
+                    "role": "user",
+                    "content": (
+                        "For each food/product name (Hungarian, German or English), write "
+                        "a concise ENGLISH food-database entry as it might appear in a "
+                        "nutrition reference: the generic food name, then a short clause on "
+                        "its form and main ingredients. Drop brands, quantities and "
+                        "packaging. One entry per input, in order, e.g. "
+                        "'Cucumber, raw — a crisp green vegetable eaten fresh'.\n\n"
+                        f"{numbered}"
+                    ),
+                }
+            ],
+            response_model=Docs,
+        )
+        d = res.docs[: len(chunk)] + [""] * max(0, len(chunk) - len(res.docs))
+        out.extend(d)
+    return out
+
+
 def build_food_map(
     con: duckdb.DuckDBPyConnection,
     cache_dir: str | Path = "data/clean",

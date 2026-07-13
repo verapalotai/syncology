@@ -327,12 +327,35 @@ token-level matching is marginally more robust to the language gap, but not
 significantly. Lexical retrieval is not an alternative to translation; it *depends*
 on it.
 
-**Synthesis so far — flat sophistication axes, two real levers.** Across the
-*global* sophistication knobs — embedder scale (§findings 2), reranking (§findings 4),
-and the retrieval algorithm — the differences are inside the noise. What moves
-Success@1 across the board is **query transformation** (translation: 0.30 → 0.88,
-~2.5×) and **corpus coverage** (OFF, via the cascade). One method escapes this — but
-only *locally* — the next section.
+## Query elaboration — HyDE backfires
+
+Translation is the pipeline's one decisive transform (0.30 → 0.88). Would a *richer*
+transform do more? **HyDE** (Gao et al. 2022) embeds not the query but an LLM-generated
+*hypothetical document* that answers it — here a hypothetical USDA-style entry. We test
+two: generated from the raw Hungarian name (translation folded in), and from the
+English translation (pure elaboration).
+
+| system | Success@1 [95% CI] | McNemar vs translated |
+|---|---|---|
+| translated | 0.877 [0.828, 0.922] | — |
+| HyDE-from-raw | 0.770 [0.711, 0.824] | +8 / −30, p = 5e-4 |
+| HyDE-from-translation | 0.765 [0.706, 0.824] | +4 / −27, p = 3e-5 |
+
+**HyDE significantly *hurts*** — ~11 points, both variants, both p < 0.001. And not
+from bad generations: the hypothetical entries are clean (`Carrot, raw — an orange root
+vegetable eaten fresh and crisp`). That is exactly the problem. USDA descriptions are
+terse *identity* strings; the added descriptive clause injects distractor tokens
+(`crisp`, `fresh`, `vegetable`) that drift the embedding off the food's identity — worst
+on branded (0.75 → 0.42). Translation to the concise name is precisely the right amount
+of transformation; elaborating past it is the query-side analog of the reranker's harm.
+
+**Synthesis so far — flat-or-harmful sophistication, two real levers.** Every knob
+beyond translation is inside the noise or actively harmful: embedder scale (flat,
+§findings 2), reranking (*hurts*, §findings 4), the retrieval algorithm (flat), and now
+query elaboration (HyDE, *hurts*, −11 pp). What moves Success@1 across the board is one
+right-sized **query transformation** (translation: 0.30 → 0.88, ~2.5×) and **corpus
+coverage** (OFF, via the cascade). One method escapes this — but only *locally* — the
+next section.
 
 ## Attribute-aware matching (Ditto-style)
 
@@ -396,10 +419,12 @@ corpus behind a confidence gate, and serialize attributes for the ambiguous-name
 - The retrieval matrix holds the corpus fixed at USDA (ColBERT's per-token index does
   not scale to the 360k OFF corpus without an ANN backend); the algorithm comparison
   is therefore clean but does not re-test the fancier retrievers *on* the OFF tail.
-- HyDE (hypothetical-document query expansion) remains untested. The regional/OOV
-  stratum stays small (N=3) even after mining the full log — genuinely
-  vocabulary-absent foods are rare, so its CI is wide by nature, not for lack of
-  effort; most Hungarian-named logged foods do have a USDA equivalent.
+- The regional/OOV stratum stays small (N=3) even after mining the full log —
+  genuinely vocabulary-absent foods are rare, so its CI is wide by nature, not for lack
+  of effort; most Hungarian-named logged foods do have a USDA equivalent.
+- HyDE was generated with a single hypothetical document per query (no multi-sample
+  averaging, and no query-vector interpolation); a richer HyDE could differ, but the
+  ~11 pt drop is a wide margin to close.
 
 ## Reproduce
 
@@ -423,6 +448,9 @@ SYNCOLOGY_FOOD_GOLD=data/raw/personal/nutrition/food_gold_hard.json \
 # Ditto-style attribute matching — branded soft spot (enlarged strata gold):
 SYNCOLOGY_FOOD_GOLD=data/raw/personal/nutrition/food_gold_strata.json \
   uv run python scripts/eval_food_ditto.py
+# HyDE query transform — hypothetical-document vs translation (calls the LLM once):
+SYNCOLOGY_FOOD_GOLD=data/raw/personal/nutrition/food_gold_hard.json \
+  uv run python scripts/eval_food_hyde.py
 ```
 
 The OFF CSV export (public, ~1.3 GB gz) is fetched once from

@@ -53,10 +53,16 @@ _NODE_SQL: dict[str, str] = {
         SELECT metric AS key, replace(metric, 'Dietary', '') AS name, any_value(unit) AS unit
         FROM measurements WHERE metric LIKE 'Dietary%' GROUP BY metric
     """,
-    "Food": f"""
+    "Food": """
+        SELECT fdc_id, description, category, data_type,
+               energy_kcal, protein_g, carbs_g, fat_g
+        FROM foods
+    """,
+    "Meal": f"""
         SELECT correlation_id AS id, 'yazio' AS source, {_LOCAL_TS.replace('start_ts', 'min(start_ts)')} AS logged_ts
         FROM measurements WHERE correlation_id IS NOT NULL GROUP BY correlation_id
     """,
+    "Ingredient": "SELECT key, name FROM ingredients",
     "Activity": f"SELECT activity_id AS id, activity_type, {_LOCAL_TS} AS start_ts, "
                 f"duration_s, distance_km, energy_kcal FROM activities",
     "Symptom": """
@@ -88,13 +94,17 @@ _REL_SQL: dict[str, str] = {
         SELECT {_LOCAL_DAY} AS src, metric AS dst, sum(value_num) AS amount
         FROM measurements WHERE metric LIKE 'Dietary%' GROUP BY 1, 2
     """,
-    "FOOD_LOGGED_ON": f"""
+    "LOGGED_ON": f"""
         SELECT correlation_id AS src, CAST(min(start_ts) AT TIME ZONE '{TZ}' AS DATE) AS dst
         FROM measurements WHERE correlation_id IS NOT NULL GROUP BY correlation_id
     """,
     "CONTAINS": """
         SELECT correlation_id AS src, metric AS dst, sum(value_num) AS amount
         FROM measurements WHERE correlation_id IS NOT NULL AND metric LIKE 'Dietary%' GROUP BY 1, 2
+    """,
+    "COMPOSED_OF": """
+        SELECT fdc_id AS src, ingredient_key AS dst, gram_weight
+        FROM food_ingredients
     """,
     "OBSERVED_ON": f"""
         SELECT CASE metric {' '.join(f"WHEN '{m}' THEN '{s}'" for m, s in _SYMPTOMS.items())} END AS src,

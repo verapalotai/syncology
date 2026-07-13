@@ -48,14 +48,24 @@ flowchart LR
   WK --> ACT
   ACT --> DAE[/daily_activity_events/]
 
+  FDC[USDA FDC CSVs] --> FD[(foods)]
+  FDC --> ING[(ingredients)]
+  FDC --> FI[(food_ingredients)]
+  YZ[yazio.csv] --> YL[(yazio_log)] --> YF[(yazio_foods)]
+  YF -->|translate+embed+macro| FM[(food_map)]
+  FD --> FM
+
   LC --> KG[(Kuzu graph)]
   CP --> KG
   DN --> KG
   ACT --> KG
+  FD --> KG
+  ING --> KG
+  FI --> KG
 
   classDef tbl fill:#e8f0fe,stroke:#4285f4;
   classDef view fill:#e6f4ea,stroke:#34a853;
-  class M,AS,MC,CVM,CP,CS,LR,BM,BR,WK,ACT,KG tbl;
+  class M,AS,MC,CVM,CP,CS,LR,BM,BR,WK,ACT,FD,ING,FI,YL,YF,FM,KG tbl;
   class CAT,DA,DN,CD,LC,DAE view;
 ```
 
@@ -322,6 +332,53 @@ sessions — so "what *kind* of training on this day" is answerable.
 
 ---
 
+## Food & nutrition lookup
+
+The canonical food/nutrient vocabulary (USDA FoodData Central), the logged Yazio
+foods, and the cross-lingual reconciliation between them — the DB A5's voice
+`log_meal` resolves free text against. Reconciliation method and the embedding-model
+benchmark are in `docs/food_reconciliation_report.md`.
+
+### `foods` — canonical USDA foods (13,692 rows)
+
+Per-100g nutrition for SR-Legacy + Foundation + FNDDS survey foods (branded
+excluded). `fdc_id` (**PK**) · `description` · `data_type` · `category` · plus
+per-100g `energy_kcal`, `protein_g`, `carbs_g`, `fat_g`, `saturated_fat_g`,
+`fiber_g`, `sugars_g`, `cholesterol_mg`, `sodium_mg`, `potassium_mg`, `calcium_mg`,
+`iron_mg`, `magnesium_mg`, `vitamin_d_ug`, `vitamin_b12_ug`, `folate_ug`.
+
+### `ingredients` — canonical ingredient vocabulary (2,332 rows)
+
+`key` (**PK**) · `name` · `n_foods` (how many foods use it). Extracted from the
+FNDDS recipe/input-food composition.
+
+### `food_ingredients` — food → ingredient composition (18,584 rows)
+
+`fdc_id` → `ingredient_key` (both FK-clean, 0 orphans) with `seq_num`,
+`ingredient_name`, `gram_weight`. Populates the graph's
+`Food-COMPOSED_OF→Ingredient`. 5,431 foods carry a composition (the FNDDS recipes);
+**408 of the 597 reconciled** foods do.
+
+### `yazio_log` — logged food entries (5,245 rows)
+
+The Yazio CSV export, one row per logged item: `log_date`, `log_time`, `meal`,
+`product`, `amount`, `unit`, `portions`, per-gram macros, and per-entry totals.
+
+### `yazio_foods` — distinct logged products (875 rows)
+
+`product` (**PK**) · per-100g `energy_kcal` / `protein_g` / `fat_g` / `carbs_g` ·
+`times_logged`. The de-duplicated food vocabulary to reconcile.
+
+### `food_map` — Yazio → USDA reconciliation (875 rows)
+
+`product` (**PK**) → `fdc_id` (USDA match) with `en_name` (LLM translation),
+`description`, `cosine`, `macro_sim`, `score`, `method`. Method
+`translate+embed+macro`: translate HU/DE → EN (cheap LLM), embed against USDA
+descriptions (local `bge-m3`), rerank the shortlist by macro fingerprint. The
+embedder × query-transform × rerank comparison is write-up #2's subject.
+
+---
+
 ## Knowledge graph (Kuzu)
 
 The integration layer: a `Day` spine ties labs, cycle phase, nutrition, and
@@ -392,5 +449,7 @@ uv run python scripts/build_marts.py             # daily_* + cycle_days + cycle_
 uv run python scripts/extract_labs.py            # lab_results (local or --engine api)
 uv run python scripts/resolve_biomarkers.py      # biomarker_registry + biomarker_map + lab_results_canonical
 uv run python scripts/build_activities.py        # activities + workouts → daily_activity_events
+uv run python scripts/build_foods.py             # USDA foods + ingredients + composition
+uv run python scripts/reconcile_foods.py         # Yazio → USDA reconciliation (food_map)
 uv run python scripts/build_graph.py             # Kuzu knowledge graph + demo traversals
 ```

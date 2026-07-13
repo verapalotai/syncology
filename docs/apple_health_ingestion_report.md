@@ -25,6 +25,9 @@ The parser streams that file into two tables in
   rate, calories, body temperature, menstrual flow, …). The metric name is a
   *value in a column*, not a table or column name.
 - **`activity_summary`** — one row per day of Apple's Activity ring data.
+- **`workouts`** — discrete `Workout` events (added later; currently the 2 Slopes
+  ski sessions — the parser now keeps them for the unified `activities` table
+  rather than dropping them).
 
 A companion script (`scripts/parse_apple_health.py`) runs the parse and prints a
 verification report that flags drift against a known-good baseline.

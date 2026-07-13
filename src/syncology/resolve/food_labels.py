@@ -56,6 +56,34 @@ def _stems(text: str) -> set[str]:
     return {_stem(t) for t in re.findall(r"[a-z]+", text.lower())}
 
 
+# Difficulty strata for the benchmark (assigned from the food name).
+_REGIONAL = ("lecsó", "lecso", "ajvar", "körözött", "korozott", "túró rudi", "rakott",
+             "pörkölt", "gulyás", "bundás", "meggyleves", "kovász")
+_BRAND = ("dmbio", "oatly", "alnatura", "the bridge", "barista", "jersey miracle",
+          "alpro", "danone", "milbona", "müller", "yfood", "bio ")
+_PREP = ("boiled", "cooked", "roasted", "fried", "steamed", "grilled", "baked",
+         "smoked", "dried", "ground", "pickled", "fermented", "jam", "juice",
+         "paste", "sauce", "spread", "puree", "syrup", "brew")
+_MODIFIER = ("red", "green", "yellow", "white", "purple", "baby", "wild", "cherry",
+             "sour", "sweet", "hot", "black", "dark", "spicy", "fresh", "raw")
+
+
+def classify(product: str, en_name: str | None = None) -> str:
+    """Difficulty stratum: regional | branded | prepared | compound | simple."""
+    p = (product or "").lower()
+    en = (en_name or "").lower()
+    if any(r in p or r in en for r in _REGIONAL):
+        return "regional"
+    if any(b in p for b in _BRAND):
+        return "branded"
+    words = en.split()
+    if any(w in _PREP for w in words):
+        return "prepared"
+    if len(words) >= 2 and words[0] in _MODIFIER:
+        return "compound"
+    return "simple"
+
+
 def is_correct(description: str | None, keywords: tuple[str, ...]) -> bool:
     """True if any keyword's word-stems are all present in the description.
 

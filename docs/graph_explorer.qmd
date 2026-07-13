@@ -62,7 +62,8 @@ is the *structure*, not my data.
     <b>Node types</b>
     <div class="row"><i>cycle</i><s style="background:#332288"></s>CyclePhase<s style="background:#88CCEE"></s>Symptom</div>
     <div class="row"><i>labs</i><s style="background:#DDCC77"></s>LabResult<s style="background:#CC6677"></s>Biomarker<s style="background:#999933"></s>RefRange</div>
-    <div class="row"><i>food</i><s style="background:#882255"></s>Meal<s style="background:#117733"></s>Food<s style="background:#44AA99"></s>Ingredient<s style="background:#AA4499"></s>Nutrient</div>
+    <div class="row"><i>food</i><s style="background:#882255"></s>Meal<s style="background:#117733"></s>Food<s style="background:#44AA99"></s>Ingredient</div>
+    <div class="row"><i>nutrient</i><s style="background:#6A3D9A"></s>energy<s style="background:#9970AB"></s>macro<s style="background:#C2A5CF"></s>micro</div>
     <div class="row"><s style="background:#222222"></s>Day<s style="background:#EE7733"></s>Activity</div>
   </div>
   <div id="panel"></div>
@@ -79,8 +80,8 @@ is the *structure*, not my data.
     LabResult:"#DDCC77", ReferenceRange:"#999933", Meal:"#882255", Food:"#117733",
     Ingredient:"#44AA99", Nutrient:"#AA4499", Activity:"#EE7733"
   };
-  function n(id, label, type, props) {
-    return { data: { id:id, label:label, ntype:type, color:COLOR[type] || "#888", props:props } };
+  function n(id, label, type, props, color) {
+    return { data: { id:id, label:label, ntype:type, color: color || COLOR[type] || "#888", props:props } };
   }
   function e(s, t, rel, extra) { return { data: { source:s, target:t, rel:rel + (extra?" · "+extra:"") } }; }
 
@@ -89,12 +90,14 @@ is the *structure*, not my data.
     n("phase","ovulation","CyclePhase",{ "fertility zone":"fertile", "inferred from":"BBT shift + mucus peak + LH surge" }),
     n("sym_m","Cervical mucus","Symptom",{ value:"egg-white", ordinal:"5 (peak fertility)", predicts:"ovulation" }),
     n("sym_lh","LH / ovulation test","Symptom",{ value:"positive (surge)", note:"a hint only — unreliable under PMOS" }),
+    n("sym_bbt","Basal body temperature","Symptom",{ value:"36.50 °C", measured:"daily, on waking", note:"the confirmer — a sustained rise dates ovulation" }),
     n("act","Morning run","Activity",{ distance:"5.2 km", duration:"31 min", energy:"410 kcal", source:"Strava" }),
     n("lab","Estradiol — lab result","LabResult",{ value:"1108 pmol/L", date:"2025-01-14", "as-of status":"normal" }),
     n("bm","Estradiol (biomarker)","Biomarker",{ category:"hormone", unit:"pmol/L", key:"estradiol" }),
     n("rr","Estradiol — reference range","ReferenceRange",{ interval:"46–607 pmol/L", "valid from":"2024-02", note:"judged as-of the result's date" }),
-    n("ing_oats","Rolled oats","Ingredient",{ "used in foods":"312" }),
-    n("ing_salmon","Atlantic salmon","Ingredient",{ "used in foods":"46" })
+    n("ing_milk","Milk","Ingredient",{ "used in foods":"1,204" }),
+    n("ing_oats","Oats, dry","Ingredient",{ "used in foods":"188" }),
+    n("ing_fat","Table fat","Ingredient",{ "used in foods":"96" })
   ];
   var edges = [
     // cycle: the phase is INFERRED from the symptoms, but in the graph both attach to
@@ -102,30 +105,33 @@ is the *structure*, not my data.
     e("day","phase","IN_PHASE"),
     e("sym_m","day","OBSERVED_ON","egg-white"),
     e("sym_lh","day","OBSERVED_ON","positive"),
+    e("sym_bbt","day","OBSERVED_ON","36.50 °C"),
     e("act","day","PERFORMED_ON"),
     e("lab","day","RESULT_ON"),
     e("lab","bm","MEASURED_AS"),
     e("rr","bm","REF_FOR"),
+    // Only genuinely composite foods get a COMPOSED_OF breakdown (oatmeal = milk + oats +
+    // fat); whole foods (banana, chicken, salmon) have none — the logged food IS the ingredient.
+    e("food_o","ing_milk","COMPOSED_OF","240 g"),
     e("food_o","ing_oats","COMPOSED_OF","40 g"),
-    e("food_s","ing_salmon","COMPOSED_OF","150 g")
+    e("food_o","ing_fat","COMPOSED_OF","5 g")
   ];
 
-  // Nutrients: 4 logged macros + two micros (magnesium, iron) the log never records.
-  // [key, label, unit, decimals, logged?]
+  // Nutrients split into energy | macro | micro. [key, label, unit, decimals, category].
   var NUTR = [
-    ["energy","Energy","kcal",0,true], ["protein","Protein","g",1,true],
-    ["fat","Fat","g",1,true], ["carbohydrate","Carbohydrate","g",1,true],
-    ["magnesium","Magnesium","mg",0,false], ["iron","Iron","mg",1,false]
+    ["energy","Energy","kcal",0,"energy"], ["protein","Protein","g",1,"macro"],
+    ["fat","Fat","g",1,"macro"], ["carbohydrate","Carbohydrate","g",1,"macro"],
+    ["magnesium","Magnesium","mg",0,"micro"], ["iron","Iron","mg",1,"micro"]
   ];
-  var MACROS = ["energy","protein","fat","carbohydrate"];
+  var MACROS = ["energy","protein","fat","carbohydrate"];  // the set the app logs
+  var NCOLOR = { energy:"#6A3D9A", macro:"#9970AB", micro:"#C2A5CF" };
   NUTR.forEach(function (x) {
-    nodes.push(n(x[0], x[1], "Nutrient",
-      { type: x[4] ? "macronutrient" : "micronutrient (never logged — from USDA)", unit: x[2] }));
+    nodes.push(n(x[0], x[1], "Nutrient", { category: x[4], unit: x[2] }, NCOLOR[x[4]]));
   });
 
   // Real USDA foods (public reference data). [id, label, fdc_id, portion g, per-100g in NUTR order].
   var FOODS = [
-    ["food_o","Oatmeal, cooked",173905,200,[71,2.54,1.52,12,27,0.9]],
+    ["food_o","Oatmeal, with milk",2708384,200,[128,5.48,4.75,15.95,35,0.67]],
     ["food_b","Banana",173944,120,[89,1.09,0.33,22.84,27,0.26]],
     ["food_c","Chicken breast, roasted",171477,150,[165,31.02,3.57,0,29,1.04]],
     ["food_v","Broccoli, boiled",169967,160,[35,2.38,0.41,7.18,21,0.67]],
@@ -239,20 +245,24 @@ and you compute a nutrient the log **never recorded** — a day's magnesium — 
 set (generated from the USDA data — no cherry-picked gaps).
 
 **Cycle — inference, not a shortcut edge.** You asked whether `Symptom` should link to
-`CyclePhase`. In the model it doesn't, on purpose: the phase is *inferred from* the symptoms
-(mucus predicts ovulation, temperature confirms, the LH test is a hint), so both the signs
-and the resulting phase attach to the same `Day` — `Symptom —OBSERVED_ON→ Day —IN_PHASE→
-CyclePhase`. The inferred `phase` on the `Day` **is** that relationship; a direct edge would
-duplicate it. Click **ovulation** and trace back through the day to the egg-white mucus and
-positive LH test that inferred it.
+`CyclePhase`. In the model it doesn't, on purpose: the phase is *inferred from* the daily
+cycle signs — cervical mucus predicts ovulation, the **basal body temperature (BBT)**
+confirms it, the LH test is a hint — so both the signs and the resulting phase attach to the
+same `Day` (`Symptom —OBSERVED_ON→ Day —IN_PHASE→ CyclePhase`). The inferred `phase` on the
+`Day` **is** that relationship; a direct edge would duplicate it. Click **ovulation** and
+trace back through the day to the egg-white mucus, positive LH test, and the 36.50 °C BBT that
+inferred it. (BBT is a `Symptom` too — a signed daily reading on the `OBSERVED_ON` edge.)
 
 A couple of modelling notes the picture invites:
 
-- **`Nutrient` is a shared *type* node, not a value.** A macro like `Protein` is one node
-  reused everywhere (like `Biomarker`); the quantity lives on the **edge** —
-  `Lunch —CONTAINS·50 g→ Protein` (logged), `Chicken —HAS_NUTRIENT·31 g/100g→ Protein` (USDA).
-- **Two nutrition signals, on purpose.** `CONTAINS`/`INTAKE_ON` carry the *logged* macros
-  (energy, protein, fat, carbs); `HAS_NUTRIENT` carries the full *reference* profile from
-  USDA. `Magnesium` connects only to foods, never the meal — the log never recorded it.
+- **Nutrients split into energy / macro / micro** (the three purple shades). All are one node
+  *type* — the quantity lives on the **edge**, not the node: `Lunch —CONTAINS·50 g→ Protein`
+  (logged), `Chicken —HAS_NUTRIENT·31 g/100g→ Protein` (USDA). The `energy`/`macro` nutrients
+  are what the app logs; the `micro` ones (magnesium, iron) connect *only* to foods — never
+  the meal — because the log never recorded them; they're reached through the food link.
+- **Ingredients are sparse, on purpose.** `COMPOSED_OF` appears only for genuinely composite
+  foods — oatmeal made with milk resolves to *milk + oats + fat*. A logged banana, chicken
+  breast, or salmon has none: the logged food *is* the ingredient, so there's nothing to
+  decompose. That unevenness is a faithful artifact of a mixed food log, not a gap.
 - **`Estradiol` is connected to its result** — `LabResult —MEASURED_AS→ Biomarker`, judged
   against `ReferenceRange —REF_FOR→ Biomarker` in effect on the result's date.

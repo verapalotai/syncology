@@ -38,7 +38,8 @@ NODE_TABLES: tuple[str, ...] = (
     # the as-of lookup in resolve/reference_ranges.py.
     "CREATE NODE TABLE ReferenceRange(id STRING, low DOUBLE, high DOUBLE, unit STRING, "
     "n_panels INT64, valid_from DATE, valid_to DATE, PRIMARY KEY(id))",
-    "CREATE NODE TABLE Nutrient(key STRING, name STRING, unit STRING, PRIMARY KEY(key))",
+    "CREATE NODE TABLE Nutrient(key STRING, name STRING, unit STRING, category STRING, "
+    "PRIMARY KEY(key))",
     # Canonical food entity (USDA FoodData Central), with per-100g macros — the
     # vocabulary A5's log_meal resolves free text against.
     "CREATE NODE TABLE Food(fdc_id INT64, description STRING, category STRING, "

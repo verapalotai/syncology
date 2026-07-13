@@ -18,26 +18,27 @@ TZ = "Europe/Budapest"
 _LOCAL_DAY = f"CAST(start_ts AT TIME ZONE '{TZ}' AS DATE)"
 _LOCAL_TS = f"CAST(start_ts AT TIME ZONE '{TZ}' AS TIMESTAMP)"
 
-# Canonical nutrient vocabulary — (USDA foods column, key, display name, unit).
+# Canonical nutrient vocabulary — (USDA foods column, key, display name, unit, category).
 # Both the logged Yazio macros and the USDA per-100g profiles map onto these keys,
-# so one Nutrient node is shared by CONTAINS / INTAKE_ON / HAS_NUTRIENT.
+# so one Nutrient node is shared by CONTAINS / INTAKE_ON / HAS_NUTRIENT. The category
+# splits nutrients into energy | macro | micro.
 NUTRIENT_COLS = (
-    ("energy_kcal", "energy", "Energy", "kcal"),
-    ("protein_g", "protein", "Protein", "g"),
-    ("carbs_g", "carbohydrate", "Carbohydrate", "g"),
-    ("fat_g", "fat", "Fat", "g"),
-    ("saturated_fat_g", "saturated_fat", "Saturated fat", "g"),
-    ("fiber_g", "fiber", "Fiber", "g"),
-    ("sugars_g", "sugars", "Sugars", "g"),
-    ("cholesterol_mg", "cholesterol", "Cholesterol", "mg"),
-    ("sodium_mg", "sodium", "Sodium", "mg"),
-    ("potassium_mg", "potassium", "Potassium", "mg"),
-    ("calcium_mg", "calcium", "Calcium", "mg"),
-    ("iron_mg", "iron", "Iron", "mg"),
-    ("magnesium_mg", "magnesium", "Magnesium", "mg"),
-    ("vitamin_d_ug", "vitamin_d", "Vitamin D", "ug"),
-    ("vitamin_b12_ug", "vitamin_b12", "Vitamin B12", "ug"),
-    ("folate_ug", "folate", "Folate", "ug"),
+    ("energy_kcal", "energy", "Energy", "kcal", "energy"),
+    ("protein_g", "protein", "Protein", "g", "macro"),
+    ("carbs_g", "carbohydrate", "Carbohydrate", "g", "macro"),
+    ("fat_g", "fat", "Fat", "g", "macro"),
+    ("saturated_fat_g", "saturated_fat", "Saturated fat", "g", "macro"),
+    ("fiber_g", "fiber", "Fiber", "g", "macro"),
+    ("sugars_g", "sugars", "Sugars", "g", "macro"),
+    ("cholesterol_mg", "cholesterol", "Cholesterol", "mg", "micro"),
+    ("sodium_mg", "sodium", "Sodium", "mg", "micro"),
+    ("potassium_mg", "potassium", "Potassium", "mg", "micro"),
+    ("calcium_mg", "calcium", "Calcium", "mg", "micro"),
+    ("iron_mg", "iron", "Iron", "mg", "micro"),
+    ("magnesium_mg", "magnesium", "Magnesium", "mg", "micro"),
+    ("vitamin_d_ug", "vitamin_d", "Vitamin D", "ug", "micro"),
+    ("vitamin_b12_ug", "vitamin_b12", "Vitamin B12", "ug", "micro"),
+    ("folate_ug", "folate", "Folate", "ug", "micro"),
 )
 
 # Cycle-sign metrics modeled as Symptom observations.
@@ -73,8 +74,9 @@ _NODE_SQL: dict[str, str] = {
         FROM biomarker_reference_ranges
     """,
     "Nutrient": "SELECT * FROM (VALUES "
-                + ", ".join(f"('{k}', '{name}', '{u}')" for _c, k, name, u in NUTRIENT_COLS)
-                + ") t(key, name, unit)",
+                + ", ".join(f"('{k}', '{name}', '{u}', '{cat}')"
+                            for _c, k, name, u, cat in NUTRIENT_COLS)
+                + ") t(key, name, unit, category)",
     "Food": """
         SELECT fdc_id, description, category, data_type,
                energy_kcal, protein_g, carbs_g, fat_g
@@ -93,6 +95,7 @@ _NODE_SQL: dict[str, str] = {
                 f"duration_s, distance_km, energy_kcal FROM activities",
     "Symptom": """
         SELECT * FROM (VALUES
+            ('bbt','Basal body temperature','cycle'),
             ('cervical_mucus','Cervical mucus','cycle'),
             ('menstrual_flow','Menstrual flow','cycle'),
             ('lh_test','LH / ovulation test','cycle'),
@@ -148,8 +151,8 @@ _REL_SQL: dict[str, str] = {
     # Each USDA food → its per-100g nutrient profile (macros + key micros).
     "HAS_NUTRIENT": "SELECT u.fdc_id AS src, m.nkey AS dst, u.per_100g FROM ("
         "SELECT fdc_id, col, per_100g FROM foods UNPIVOT (per_100g FOR col IN ("
-        + ", ".join(c for c, _k, _n, _u in NUTRIENT_COLS) + "))) u JOIN (VALUES "
-        + ", ".join(f"('{c}', '{k}')" for c, k, _n, _u in NUTRIENT_COLS)
+        + ", ".join(c for c, _k, _n, _u, _cat in NUTRIENT_COLS) + "))) u JOIN (VALUES "
+        + ", ".join(f"('{c}', '{k}')" for c, k, _n, _u, _cat in NUTRIENT_COLS)
         + ") m(col, nkey) ON u.col = m.col WHERE u.per_100g IS NOT NULL",
     "OBSERVED_ON": f"""
         SELECT CASE metric {' '.join(f"WHEN '{m}' THEN '{s}'" for m, s in _SYMPTOMS.items())} END AS src,
@@ -157,6 +160,10 @@ _REL_SQL: dict[str, str] = {
         FROM measurements_categorized
         WHERE metric IN ({', '.join(f"'{m}'" for m in _SYMPTOMS)})
         GROUP BY 1, 2
+        UNION ALL
+        SELECT 'bbt' AS src, {_LOCAL_DAY} AS dst,
+               CAST(round(avg(value_num), 2) AS VARCHAR) || ' °C' AS value
+        FROM measurements WHERE metric = 'BasalBodyTemperature' GROUP BY 2
     """,
 }
 

@@ -399,11 +399,12 @@ marts via Parquet (`scripts/build_graph.py`).
 `Biomarker` · `LabResult` (dated) · `ReferenceRange` (one per interval *era* per
 biomarker, carrying `valid_from`/`valid_to` — an as-of `WHERE valid_from <= date
 AND (valid_to IS NULL OR date <= valid_to)` finds the range in effect at any
-time) · `Nutrient` (16 canonical nutrients — one vocabulary shared by the logged
-macros and the USDA profiles) · `Food` (canonical USDA food, 13.7k, per-100g
-macros) · `Ingredient` (2.3k, USDA) · `Meal` (a Yazio eating occasion — a date +
-meal type, 844, with its logged macro totals) · `Symptom` (cycle signs) ·
-`Activity`.
+time) · `Nutrient` (16 canonical nutrients with a `category` of energy / macro /
+micro — one vocabulary shared by the logged macros and the USDA profiles) · `Food`
+(canonical USDA food, 13.7k, per-100g macros) · `Ingredient` (2.3k, USDA) · `Meal`
+(a Yazio eating occasion — a date + meal type, 844, with its logged macro totals) ·
+`Symptom` (cycle signs — cervical mucus, LH test, flow, and **BBT**, the daily basal
+temperature that confirms ovulation) · `Activity`.
 
 *Meal ↔ Food — the reconciled link:* a `Meal` connects to its canonical USDA
 `Food`s via `EATEN` (portion grams), sourced from the `food_map` reconciliation

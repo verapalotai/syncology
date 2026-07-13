@@ -1,0 +1,24 @@
+---
+title: "Syncology"
+subtitle: "A personal health knowledge graph, and the retrieval research that came out of it"
+listing:
+  contents:
+    - docs/writeup_food_retrieval.qmd
+  type: default
+  sort: "date desc"
+  fields: [title, subtitle, date, categories, reading-time]
+  sort-ui: false
+  filter-ui: false
+---
+
+I turned ~4.5 years of my own multi-source, multi-language health data — Apple
+Health, lab PDFs, cycle tracking, workouts, a food log — into a clean **DuckDB
+warehouse** and a **Kuzu knowledge graph**, with entity resolution across biomarkers
+and foods. The infrastructure is the boring, necessary part; the interesting part is
+what the data forced me to figure out along the way.
+
+One of those problems turned into a small, rigorous retrieval study — the kind of
+result that only shows up when you stop trusting aggregate numbers and start putting
+confidence intervals on everything.
+
+## Write-ups

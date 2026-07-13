@@ -1,0 +1,35 @@
+project:
+  type: website
+  output-dir: _site
+  # Allowlist: only the landing page and published write-ups render — the internal
+  # docs/*.md (schema, build reports, handoffs) are engineering notes, not site pages.
+  render:
+    - index.qmd
+    - docs/writeup_food_retrieval.qmd
+
+website:
+  title: "Syncology"
+  description: "A personal health knowledge graph & retrieval research notebook."
+  site-url: "https://verapalotai.github.io/syncology"
+  repo-url: "https://github.com/verapalotai/syncology"
+  navbar:
+    left:
+      - href: index.qmd
+        text: Home
+      - href: docs/writeup_food_retrieval.qmd
+        text: "Cross-lingual food retrieval"
+    right:
+      - icon: github
+        href: "https://github.com/verapalotai/syncology"
+        aria-label: GitHub
+  page-footer:
+    center: "Method and aggregate metrics are public; personal health data stays private."
+
+format:
+  html:
+    theme: cosmo
+    toc: true
+    fig-align: center
+    code-fold: true
+    grid:
+      body-width: 920px

@@ -27,3 +27,10 @@ kuzu_db/
 .idea/
 .vscode/
 data/raw/public/openfoodfacts/
+
+# Quarto build
+/_site/
+.quarto/
+
+/.quarto/
+**/*.quarto_ipynb

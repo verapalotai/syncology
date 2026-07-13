@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 
 _GOLD_PATH = Path(
@@ -40,8 +41,33 @@ def load_gold() -> dict[str, tuple[str, ...]]:
     return {product: tuple(kws) for product, kws in raw.items()}
 
 
+_PLURAL = (("ies", "y"), ("ches", "ch"), ("shes", "sh"), ("es", ""), ("s", ""))
+
+
+def _stem(word: str) -> str:
+    """Crude singularizer so 'cherries'/'cherry' and 'potatoes'/'potato' match."""
+    for suf, rep in _PLURAL:
+        if word.endswith(suf) and len(word) - len(suf) >= 3:
+            return word[: -len(suf)] + rep
+    return word
+
+
+def _stems(text: str) -> set[str]:
+    return {_stem(t) for t in re.findall(r"[a-z]+", text.lower())}
+
+
 def is_correct(description: str | None, keywords: tuple[str, ...]) -> bool:
+    """True if any keyword's word-stems are all present in the description.
+
+    Token-set, stem-aware, order-insensitive — so "goat cheese" matches
+    "Cheese, goat" and "cherry" matches "Cherries, raw", while still rejecting the
+    real errors (green apple → "Green peas", americano → "Cheese, American").
+    """
     if not description:
         return False
-    d = description.lower()
-    return any(k in d for k in keywords)
+    dstems = _stems(description)
+    for kw in keywords:
+        kstems = _stems(kw)
+        if kstems and kstems <= dstems:
+            return True
+    return False

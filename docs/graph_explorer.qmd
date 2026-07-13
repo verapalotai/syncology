@@ -18,8 +18,9 @@ its connections and inspect its (fake) properties; click the background to reset
 
 Follow the nutrition chain — `Meal —EATEN→ Food —HAS_NUTRIENT→ Nutrient`: a logged meal
 resolves to its canonical USDA food (with the portion in grams), and each food to its
-full nutrient profile. That's how the graph knows the *Vitamin D from the salmon* even
-though the food log only ever recorded calories and macros.
+full nutrient profile. That's how the graph knows the *magnesium and iron in the salmon*
+even though the food log only ever recorded calories and macros. (Every food links to the
+same complete nutrient set — 6 shown here, all 16 in the real graph.)
 
 ::: {.callout-note appearance="simple"}
 Every value here is invented. No real measurements appear anywhere on this site — this
@@ -28,7 +29,7 @@ is the *structure*, not my data.
 
 ```{=html}
 <style>
-  #graph-wrap { position: relative; width: 100%; height: 640px; border: 1px solid #e6e6e6;
+  #graph-wrap { position: relative; width: 100%; height: 560px; border: 1px solid #e6e6e6;
                 border-radius: 8px; background: #fbfbfb; overflow: hidden; }
   #cy { width: 100%; height: 100%; }
   #legend { position: absolute; top: 12px; left: 12px; background: rgba(255,255,255,.92);
@@ -63,7 +64,7 @@ is the *structure*, not my data.
   </div>
   <div id="panel"></div>
   <button id="reset">Reset view</button>
-  <span id="hint">drag to pan · scroll to zoom</span>
+  <span id="hint">click a node to label its links · drag to pan · scroll to zoom</span>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/cytoscape@3.30.2/dist/cytoscape.min.js"></script>
@@ -75,7 +76,7 @@ is the *structure*, not my data.
   }
   function e(s, t, rel, extra) { return { data: { source:s, target:t, rel:rel + (extra?" · "+extra:"") } }; }
 
-  var elements = [
+  var nodes = [
     // --- personal timeline (Day-centred) ---
     n("day","2025-01-14","Day","spine",{ "cycle day":"14", weekday:"Tuesday", "phase":"ovulation" }),
     n("phase","ovulation","CyclePhase","cycle",{ "fertility zone":"fertile", "confirmed by":"BBT shift + mucus peak" }),
@@ -86,15 +87,13 @@ is the *structure*, not my data.
     n("lab","Estradiol — lab result","LabResult","labs",{ value:"1108 pmol/L", date:"2025-01-14", "as-of status":"normal", "measured as":"Estradiol (biomarker)" }),
     n("bm","Estradiol (biomarker)","Biomarker","labs",{ category:"hormone", unit:"pmol/L", key:"estradiol", note:"canonical analyte — every Estradiol result links here via MEASURED_AS" }),
     n("rr","Estradiol — reference range","ReferenceRange","labs",{ interval:"46–607 pmol/L", "valid from":"2024-02", note:"judged as-of the result's date" }),
-    n("prot","Protein","Nutrient","nutrition",{ type:"macronutrient", unit:"g", amounts:"on the CONTAINS / INTAKE_ON edges (not the node)" }),
-    n("vitd","Vitamin D","Nutrient","nutrition",{ type:"micronutrient", unit:"µg", amounts:"on the CONTAINS / INTAKE_ON edges (not the node)" }),
-    // --- USDA reference vocabulary (separate component) — Food carries its macros as node properties ---
-    n("food_o","Oatmeal, cooked","Food","nutrition",{ "fdc_id":"(synthetic)", "kcal/100g":"71", "protein/100g":"2.5 g", "vitamin D/100g":"0 µg" }),
-    n("food_s","Salmon, cooked","Food","nutrition",{ "fdc_id":"(synthetic)", "kcal/100g":"206", "protein/100g":"22 g", "vitamin D/100g":"11 µg" }),
+    n("food_o","Oatmeal, cooked","Food","nutrition",{ "fdc_id":"(synthetic)", note:"its full USDA nutrient profile is on the HAS_NUTRIENT edges" }),
+    n("food_s","Salmon, cooked","Food","nutrition",{ "fdc_id":"(synthetic)", note:"its full USDA nutrient profile is on the HAS_NUTRIENT edges" }),
     n("ing_oats","Rolled oats","Ingredient","nutrition",{ "used in foods":"312" }),
     n("ing_water","Water","Ingredient","nutrition",{ "used in foods":"1,204" }),
-    n("ing_salmon","Atlantic salmon","Ingredient","nutrition",{ "used in foods":"46" }),
-
+    n("ing_salmon","Atlantic salmon","Ingredient","nutrition",{ "used in foods":"46" })
+  ];
+  var edges = [
     e("day","phase","IN_PHASE"),
     e("sym","day","OBSERVED_ON","egg-white"),
     e("act","day","PERFORMED_ON"),
@@ -103,21 +102,43 @@ is the *structure*, not my data.
     e("lab","day","RESULT_ON"),
     e("lab","bm","MEASURED_AS"),
     e("rr","bm","REF_FOR"),
-    // logged macro totals (Yazio logs kcal / protein / fat / carbs)
-    e("meal_b","prot","CONTAINS","18 g"),
-    e("meal_d","prot","CONTAINS","34 g"),
-    e("day","prot","INTAKE_ON","92 g"),
     // the reconciled link — a logged meal → its canonical USDA food, portion in grams
     e("meal_b","food_o","EATEN","40 g"),
     e("meal_d","food_s","EATEN","150 g"),
-    // each food → its full USDA nutrient profile (incl. micros never logged)
-    e("food_o","prot","HAS_NUTRIENT","2.5 g/100g"),
-    e("food_s","prot","HAS_NUTRIENT","22 g/100g"),
-    e("food_s","vitd","HAS_NUTRIENT","11 µg/100g"),
     e("food_o","ing_oats","COMPOSED_OF","40 g"),
     e("food_o","ing_water","COMPOSED_OF","160 g"),
     e("food_s","ing_salmon","COMPOSED_OF","150 g")
   ];
+
+  // The nutrient layer is generated from data, so it is symmetric by construction:
+  // EVERY food links to the SAME full nutrient set (the real graph has all 16 per food).
+  // [key, label, unit, oatmeal/100g, salmon/100g]; first four are the logged macros.
+  var NUTR = [
+    ["energy","Energy","kcal",71,206], ["protein","Protein","g",2.5,22],
+    ["fat","Fat","g",1.5,12], ["carbohydrate","Carbohydrate","g",12,0.2],
+    ["magnesium","Magnesium","mg",27,30], ["iron","Iron","mg",0.9,0.5]
+  ];
+  var MACROS = ["energy","protein","fat","carbohydrate"];
+  NUTR.forEach(function (x) {
+    var macro = MACROS.indexOf(x[0]) >= 0;
+    nodes.push(n(x[0], x[1], "Nutrient", "nutrition",
+      { type: macro ? "macronutrient (logged + USDA)" : "micronutrient (USDA only — never logged)",
+        unit: x[2], amounts: "on the edges, not the node" }));
+    edges.push(e("food_o", x[0], "HAS_NUTRIENT", x[3] + " " + x[2] + "/100g"));
+    edges.push(e("food_s", x[0], "HAS_NUTRIENT", x[4] + " " + x[2] + "/100g"));
+  });
+  // logged macros only: per-meal CONTAINS + daily INTAKE_ON (Yazio logs the 4 macros)
+  var MEAL_LOG = {
+    meal_b: { energy:"210 kcal", protein:"6 g", fat:"4 g", carbohydrate:"30 g" },
+    meal_d: { energy:"380 kcal", protein:"34 g", fat:"20 g", carbohydrate:"8 g" }
+  };
+  Object.keys(MEAL_LOG).forEach(function (mid) {
+    MACROS.forEach(function (k) { edges.push(e(mid, k, "CONTAINS", MEAL_LOG[mid][k])); });
+  });
+  var DAY_TOTAL = { energy:"1650 kcal", protein:"92 g", fat:"70 g", carbohydrate:"150 g" };
+  MACROS.forEach(function (k) { edges.push(e("day", k, "INTAKE_ON", DAY_TOTAL[k])); });
+
+  var elements = nodes.concat(edges);
 
   var cy = cytoscape({
     container: document.getElementById("cy"),
@@ -129,17 +150,21 @@ is the *structure*, not my data.
           "text-margin-y": 3, "width": 26, "height": 26, "border-width": 2, "border-color": "#fff" } },
       { selector: 'node[ntype = "Day"]', style: { "width": 46, "height": 46, "font-size": 12, "font-weight": "bold" } },
       { selector: "edge", style: {
-          "label": "data(rel)", "font-size": 8, "color": "#8a8a8a", "text-rotation": "autorotate",
+          "font-size": 8, "color": "#555", "text-rotation": "autorotate",
           "text-background-color": "#fbfbfb", "text-background-opacity": 1, "text-background-padding": 2,
-          "width": 1.4, "line-color": "#c8c8c8", "target-arrow-color": "#c8c8c8",
+          "width": 1.4, "line-color": "#cdcdcd", "target-arrow-color": "#cdcdcd",
           "target-arrow-shape": "triangle", "arrow-scale": 0.9, "curve-style": "bezier" } },
-      { selector: ".faded", style: { "opacity": 0.12, "text-opacity": 0.12 } },
+      { selector: ".faded", style: { "opacity": 0.08, "text-opacity": 0 } },
       { selector: ".hi", style: { "border-color": "#333", "border-width": 3 } },
-      { selector: "edge.hi", style: { "line-color": "#333", "target-arrow-color": "#333", "width": 2.4, "color": "#333" } }
+      // edge labels are shown only for the clicked node's edges — keeps the dense graph legible
+      { selector: "edge.hi", style: { "label": "data(rel)", "line-color": "#333",
+          "target-arrow-color": "#333", "width": 2.4, "color": "#222", "z-index": 99 } }
     ],
-    layout: { name: "cose", idealEdgeLength: 95, nodeRepulsion: 9000, padding: 30, animate: true, animationDuration: 600 },
+    layout: { name: "cose", idealEdgeLength: 68, nodeRepulsion: 16000, padding: 30, animate: true, animationDuration: 600, componentSpacing: 90 },
     wheelSensitivity: 0.2
   });
+  // Guarantee the graph is framed on load (cose's own fit can race the container layout).
+  cy.one("layoutstop", function () { cy.fit(undefined, 34); });
 
   var panel = document.getElementById("panel");
   function showPanel(node) {
@@ -179,20 +204,22 @@ to its per-100g profile via **`HAS_NUTRIENT`**. Building that `Meal → Food` ed
 reconciling a named, cross-lingual log entry to the right USDA row — exactly the problem
 the [food-retrieval study](writeup_food_retrieval.qmd) solves; its `food_map` output is
 what populates `EATEN`. The reward: traverse `Meal —EATEN→ Food —HAS_NUTRIENT→ Nutrient`
-and you can compute a nutrient that was **never logged** — the salmon's Vitamin D, or a
-day's magnesium — as `Σ portion/100 × the food's per-100g amount`.
+and you can compute a nutrient that was **never logged** — a day's magnesium, the iron in
+the salmon — as `Σ portion/100 × the food's per-100g amount`.
 
 A couple of modelling choices worth calling out, since the picture invites the questions:
 
-- **`Nutrient` is a shared *type* node, not a value.** `Protein` looks "empty" because the
-  quantity lives on the **edge** — `Breakfast —CONTAINS·18 g→ Protein` (the logged macro),
-  `Salmon —HAS_NUTRIENT·22 g/100g→ Protein` (the USDA profile). One canonical `Protein`
-  node is reused everywhere (like `Biomarker`); amounts are edge properties.
+- **`Nutrient` is a shared *type* node, not a value.** A macro node like `Protein` looks
+  "empty" because the quantity lives on the **edge** — `Breakfast —CONTAINS·6 g→ Protein`
+  (the logged macro), `Salmon —HAS_NUTRIENT·22 g/100g→ Protein` (the USDA profile). One
+  canonical node per nutrient is reused everywhere (like `Biomarker`).
+- **The profile is systematic, not cherry-picked.** *Every* `Food` links to the *same*
+  full nutrient set via `HAS_NUTRIENT` (6 here, all 16 in the real graph) — the edges are
+  generated from the USDA data, so there are no arbitrary gaps.
 - **Two nutrition signals, on purpose.** `CONTAINS`/`INTAKE_ON` carry the *logged* macros
-  (what the app recorded — kcal, protein, fat, carbs), while `HAS_NUTRIENT` carries the
-  *reference* profile from USDA (the full micronutrient set). `Vitamin D` connects to
-  `Salmon`, not to the meal, because the log never recorded it — it's derived through the
-  food link.
+  (what the app recorded — energy, protein, fat, carbs), while `HAS_NUTRIENT` carries the
+  full *reference* profile from USDA. `Magnesium` and `Iron` connect only to the foods,
+  not to the meal, because the log never recorded them — they're derived through the link.
 - **`Estradiol` *is* connected to its result** — `LabResult —MEASURED_AS→ Biomarker`
   (and `ReferenceRange —REF_FOR→ Biomarker`). The three "Estradiol" nodes are a result,
   its analyte, and its reference range.

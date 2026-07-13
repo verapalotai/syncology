@@ -50,6 +50,13 @@ def test_cascade_route_uses_usda_confidence_only():
     assert list(food_eval.cascade_route(u_cos, u_ok, o_ok, 0.0)) == [1, 0, 1]
 
 
+def test_stratum_of_prefers_explicit_label():
+    # an adjudicated class overrides the name heuristic...
+    assert food_labels.stratum_of("Csirkepörkölt", "chicken stew", "regional") == "regional"
+    # ...but falls back to classify() when the gold gives none
+    assert food_labels.stratum_of("Piros alma", "red apple", None) == "compound"
+
+
 def test_classify_strata():
     assert food_labels.classify("Cékla", "boiled beetroot") == "prepared"
     assert food_labels.classify("Piros alma", "red apple") == "compound"

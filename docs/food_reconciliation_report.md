@@ -184,7 +184,8 @@ the compound/prepared cases translation already handles well:
   it. Only a second source (Open Food Facts) closes it.
 - **Branded products (the soft spot).** 0.75 with a wide CI — brand tokens
   (`Oatly Barista`) dilute the generic-food signal. This is where attribute-grounded
-  matching (Ditto-style, macros serialized into the record) is most likely to help.
+  matching (Ditto-style, macros serialized into the record) helps — confirmed later:
+  +11 pp on the enlarged branded stratum.
 
 Residual **modifier distraction** (`green apple`→"Green peas") still occurs but is
 now a minority of the simple/compound tail, not its dominant cause.
@@ -326,14 +327,60 @@ token-level matching is marginally more robust to the language gap, but not
 significantly. Lexical retrieval is not an alternative to translation; it *depends*
 on it.
 
-**Synthesis — three flat axes, two real levers.** Across every sophistication knob
-tested — embedder scale (§findings 2), reranking (§findings 4), and now the retrieval
-algorithm — the differences are inside the noise. What actually moves Success@1 is
-**query transformation** (translation: 0.30 → 0.88, ~2.5×) and **corpus coverage**
-(OFF, via the cascade, recovering the OOV tail). For short-text cross-lingual entity
-linking the engineering lesson is contrarian and consistent: spend on *translating the
-query* and *covering the vocabulary*, not on a bigger model, a reranker, or a fancier
-index.
+**Synthesis so far — flat sophistication axes, two real levers.** Across the
+*global* sophistication knobs — embedder scale (§findings 2), reranking (§findings 4),
+and the retrieval algorithm — the differences are inside the noise. What moves
+Success@1 across the board is **query transformation** (translation: 0.30 → 0.88,
+~2.5×) and **corpus coverage** (OFF, via the cascade). One method escapes this — but
+only *locally* — the next section.
+
+## Attribute-aware matching (Ditto-style)
+
+The branded stratum has been the soft spot throughout. Ditto (Li et al. 2020)
+serializes a record's structured attributes into the text the LM sees, so it can match
+on values, not just the name. Both sides carry per-100g macros, so we serialize them
+into query and corpus — `"oat milk (40 kcal, 1 g protein, 2 g fat, 7 g carbs per
+100g)"` — and retrieve with the same bge-m3. To give the branded stratum statistical
+power, we run on the **enlarged, strata-adjudicated gold** (N=220, branded **N=27**;
+strata are explicit hand labels here, not the name heuristic).
+
+| system | Success@1 [95% CI] | S@5 | MRR | nDCG@10 |
+|---|---|---|---|---|
+| name-only | 0.859 [0.814, 0.905] | 0.918 | 0.884 | 0.749 |
+| + macros (Ditto) | 0.864 [0.818, 0.905] | 0.923 | 0.889 | 0.792 |
+
+Overall it is flat (McNemar +6 / −5, p = 1.0) — but the per-stratum split is the point:
+
+```
+branded   0.704 → 0.815   (+11 pp — the target stratum)
+simple    0.877 → 0.860   (−2 pp — macros are noise when the name suffices)
+compound  0.905 → 0.905
+prepared  0.927 → 0.927
+regional  0.000 → 0.000   (attributes can't summon a row that isn't in the corpus)
+```
+
+The branded fixes show the mechanism cleanly — name-only anchors on the wrong salient
+token, macros restore the concept:
+
+```
+ginger turmeric shot   name → "Gelatin shot, alcoholic"   macros → "Spices, turmeric"
+tofu, plain            name → "French toast, plain"       macros → "Tofu, raw"
+soy drink              name → "Soy sauce"                 macros → a nutritional drink
+cornflakes             name → "Snacks, corn cakes"        macros → "Cereal, corn flakes"
+```
+
+(One breaks — `hemp protein powder` → "Seeds, hemp seed", macros over-correcting toward
+the raw seed.) So attribute serialization is the one sophistication that pays — but
+**selectively**: +11 pp exactly where the brand-stripped name is ambiguous, a small
+cost where it isn't (net flat), and *nothing* on the coverage-bound OOV tail. It should
+be applied conditionally — to low-confidence / branded queries — the same
+confidence-gated philosophy as the corpus cascade, not switched on globally.
+
+**Refined synthesis.** Global retrieval sophistication is flat; the broad levers are
+translation and coverage. The one exception is *targeted, attribute-aware* matching,
+which buys back a specific stratum (branded, +11 pp) when deployed selectively. The
+last-20% is not one fix but a routing problem: translate always, cover with a second
+corpus behind a confidence gate, and serialize attributes for the ambiguous-name tail.
 
 ## Limitations
 
@@ -349,9 +396,10 @@ index.
 - The retrieval matrix holds the corpus fixed at USDA (ColBERT's per-token index does
   not scale to the 360k OFF corpus without an ANN backend); the algorithm comparison
   is therefore clean but does not re-test the fancier retrievers *on* the OFF tail.
-- HyDE and attribute-serialized (Ditto-style) reranking remain untested; the stratum
-  table points at Ditto-style attribute matching as the most promising remaining move
-  for the `branded` soft spot.
+- HyDE (hypothetical-document query expansion) remains untested. The regional/OOV
+  stratum stays small (N=3) even after mining the full log — genuinely
+  vocabulary-absent foods are rare, so its CI is wide by nature, not for lack of
+  effort; most Hungarian-named logged foods do have a USDA equivalent.
 
 ## Reproduce
 
@@ -372,6 +420,9 @@ SYNCOLOGY_FOOD_GOLD=data/raw/personal/nutrition/food_gold_hard.json \
 # retrieval-systems matrix — dense/sparse/hybrid/ColBERT (needs the `retrieval` extra):
 SYNCOLOGY_FOOD_GOLD=data/raw/personal/nutrition/food_gold_hard.json \
   uv run python scripts/eval_retrieval_matrix.py
+# Ditto-style attribute matching — branded soft spot (enlarged strata gold):
+SYNCOLOGY_FOOD_GOLD=data/raw/personal/nutrition/food_gold_strata.json \
+  uv run python scripts/eval_food_ditto.py
 ```
 
 The OFF CSV export (public, ~1.3 GB gz) is fetched once from

@@ -30,15 +30,37 @@ _GOLD_PATH = Path(
 )
 
 
-def load_gold() -> dict[str, tuple[str, ...]]:
-    """Return {raw Yazio product -> accept keywords}. Raises if the file is absent."""
+def _load_raw() -> dict:
     if not _GOLD_PATH.exists():
         raise FileNotFoundError(
             f"food gold labels not found at {_GOLD_PATH} (gitignored personal data); "
             "set SYNCOLOGY_FOOD_GOLD or place the file to run the benchmark."
         )
-    raw = json.loads(_GOLD_PATH.read_text())
-    return {product: tuple(kws) for product, kws in raw.items()}
+    return json.loads(_GOLD_PATH.read_text())
+
+
+def load_gold() -> dict[str, tuple[str, ...]]:
+    """Return {raw Yazio product -> accept keywords}.
+
+    Two on-disk shapes are accepted: ``{product: [kw, ...]}`` (keyword-only) or
+    ``{product: {"kw": [...], "class": "branded"}}`` (with an explicit difficulty
+    stratum). Both yield the same keyword mapping here; see :func:`load_gold_meta`.
+    """
+    return {
+        p: tuple(v["kw"] if isinstance(v, dict) else v)
+        for p, v in _load_raw().items()
+    }
+
+
+def load_gold_meta() -> dict[str, tuple[tuple[str, ...], str | None]]:
+    """Return {product -> (keywords, explicit_class_or_None)} from the gold file."""
+    out: dict[str, tuple[tuple[str, ...], str | None]] = {}
+    for p, v in _load_raw().items():
+        if isinstance(v, dict):
+            out[p] = (tuple(v["kw"]), v.get("class"))
+        else:
+            out[p] = (tuple(v), None)
+    return out
 
 
 _PLURAL = (("ies", "y"), ("ches", "ch"), ("shes", "sh"), ("es", ""), ("s", ""))
@@ -82,6 +104,11 @@ def classify(product: str, en_name: str | None = None) -> str:
     if len(words) >= 2 and words[0] in _MODIFIER:
         return "compound"
     return "simple"
+
+
+def stratum_of(product: str, en_name: str | None, explicit: str | None) -> str:
+    """Adjudicated stratum if the gold provides one, else the name heuristic."""
+    return explicit or classify(product, en_name)
 
 
 def is_correct(description: str | None, keywords: tuple[str, ...]) -> bool:

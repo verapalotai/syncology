@@ -57,6 +57,22 @@ def test_food_ingredient_composition(tmp_path):
     assert res.get_next() == ["Hummus", "Chickpeas", 50.0]
 
 
+def test_meal_food_nutrient_chain(tmp_path):
+    """The reconciled link: a meal traverses to a food's USDA nutrient it never logged."""
+    conn = _conn(tmp_path)
+    ontology.create_schema(conn)
+    conn.execute("CREATE (:Meal {id:'2025-01-14|dinner', source:'yazio', meal_type:'dinner'})")
+    conn.execute("CREATE (:Food {fdc_id:9, description:'Salmon, cooked', category:'x', data_type:'sr'})")
+    conn.execute("CREATE (:Nutrient {key:'vitamin_d', name:'Vitamin D', unit:'ug'})")
+    conn.execute("MATCH (m:Meal), (f:Food {fdc_id:9}) CREATE (m)-[:EATEN {grams:150.0, portions:1.0}]->(f)")
+    conn.execute("MATCH (f:Food {fdc_id:9}), (n:Nutrient) CREATE (f)-[:HAS_NUTRIENT {per_100g:11.0}]->(n)")
+    res = conn.execute(
+        "MATCH (m:Meal)-[e:EATEN]->(:Food)-[h:HAS_NUTRIENT]->(n:Nutrient) "
+        "RETURN n.key, e.grams / 100.0 * h.per_100g"
+    )
+    assert res.get_next() == ["vitamin_d", 16.5]  # 150 g × 11 µg/100 g
+
+
 def test_day_phase_traversal(tmp_path):
     conn = _conn(tmp_path)
     ontology.create_schema(conn)

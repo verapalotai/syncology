@@ -167,6 +167,14 @@ last 20%, the part that separates a good product from a great one, is best frame
 "a better model" but as **routing**: detect which failure mode you're in, and apply the
 one narrow tool that fixes it.
 
+**Where it pays off.** This isn't a benchmark for its own sake — the reconciliation it
+produces (`food_map`: logged product → USDA `fdc_id`) is what powers the
+[knowledge graph's](graph_explorer.qmd) `Meal —EATEN→ Food —HAS_NUTRIENT→ Nutrient`
+link. That link lets the graph compute a nutrient the food log *never recorded* — a
+day's magnesium, the vitamin D from a specific salmon — by traversing to each food's
+full USDA profile. The last-20% of matching accuracy is exactly what makes that
+traversal trustworthy.
+
 ---
 
 *Method and aggregate metrics are public; the personal food log stays private. Full

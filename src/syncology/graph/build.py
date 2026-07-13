@@ -18,6 +18,28 @@ TZ = "Europe/Budapest"
 _LOCAL_DAY = f"CAST(start_ts AT TIME ZONE '{TZ}' AS DATE)"
 _LOCAL_TS = f"CAST(start_ts AT TIME ZONE '{TZ}' AS TIMESTAMP)"
 
+# Canonical nutrient vocabulary — (USDA foods column, key, display name, unit).
+# Both the logged Yazio macros and the USDA per-100g profiles map onto these keys,
+# so one Nutrient node is shared by CONTAINS / INTAKE_ON / HAS_NUTRIENT.
+NUTRIENT_COLS = (
+    ("energy_kcal", "energy", "Energy", "kcal"),
+    ("protein_g", "protein", "Protein", "g"),
+    ("carbs_g", "carbohydrate", "Carbohydrate", "g"),
+    ("fat_g", "fat", "Fat", "g"),
+    ("saturated_fat_g", "saturated_fat", "Saturated fat", "g"),
+    ("fiber_g", "fiber", "Fiber", "g"),
+    ("sugars_g", "sugars", "Sugars", "g"),
+    ("cholesterol_mg", "cholesterol", "Cholesterol", "mg"),
+    ("sodium_mg", "sodium", "Sodium", "mg"),
+    ("potassium_mg", "potassium", "Potassium", "mg"),
+    ("calcium_mg", "calcium", "Calcium", "mg"),
+    ("iron_mg", "iron", "Iron", "mg"),
+    ("magnesium_mg", "magnesium", "Magnesium", "mg"),
+    ("vitamin_d_ug", "vitamin_d", "Vitamin D", "ug"),
+    ("vitamin_b12_ug", "vitamin_b12", "Vitamin B12", "ug"),
+    ("folate_ug", "folate", "Folate", "ug"),
+)
+
 # Cycle-sign metrics modeled as Symptom observations.
 _SYMPTOMS = {
     "CervicalMucusQuality": "cervical_mucus",
@@ -38,6 +60,7 @@ _NODE_SQL: dict[str, str] = {
             UNION SELECT day FROM daily_nutrition
             UNION SELECT {_LOCAL_DAY} AS day FROM activities
             UNION SELECT panel_date AS day FROM lab_results
+            UNION SELECT log_date AS day FROM yazio_log
         ) d
         LEFT JOIN cycle_phases p ON d.day = p.day
     """,
@@ -49,18 +72,21 @@ _NODE_SQL: dict[str, str] = {
                ref_low AS low, ref_high AS high, unit, n_panels, valid_from, valid_to
         FROM biomarker_reference_ranges
     """,
-    "Nutrient": """
-        SELECT metric AS key, replace(metric, 'Dietary', '') AS name, any_value(unit) AS unit
-        FROM measurements WHERE metric LIKE 'Dietary%' GROUP BY metric
-    """,
+    "Nutrient": "SELECT * FROM (VALUES "
+                + ", ".join(f"('{k}', '{name}', '{u}')" for _c, k, name, u in NUTRIENT_COLS)
+                + ") t(key, name, unit)",
     "Food": """
         SELECT fdc_id, description, category, data_type,
                energy_kcal, protein_g, carbs_g, fat_g
         FROM foods
     """,
-    "Meal": f"""
-        SELECT correlation_id AS id, 'yazio' AS source, {_LOCAL_TS.replace('start_ts', 'min(start_ts)')} AS logged_ts
-        FROM measurements WHERE correlation_id IS NOT NULL GROUP BY correlation_id
+    # A Meal is a Yazio eating occasion: a (date, meal type) with its logged macros.
+    "Meal": """
+        SELECT log_date || '|' || meal AS id, 'yazio' AS source,
+               CAST(min(log_time) AS TIMESTAMP) AS logged_ts, meal AS meal_type,
+               sum(kcal_total) AS kcal, sum(protein_total) AS protein_g,
+               sum(fat_total) AS fat_g, sum(carbs_total) AS carbs_g
+        FROM yazio_log GROUP BY log_date, meal
     """,
     "Ingredient": "SELECT key, name FROM ingredients",
     "Activity": f"SELECT activity_id AS id, activity_type, {_LOCAL_TS} AS start_ts, "
@@ -90,22 +116,41 @@ _REL_SQL: dict[str, str] = {
     """,
     "IN_PHASE": "SELECT day AS src, phase AS dst FROM cycle_phases WHERE phase IS NOT NULL",
     "PERFORMED_ON": f"SELECT activity_id AS src, {_LOCAL_DAY} AS dst FROM activities",
-    "INTAKE_ON": f"""
-        SELECT {_LOCAL_DAY} AS src, metric AS dst, sum(value_num) AS amount
-        FROM measurements WHERE metric LIKE 'Dietary%' GROUP BY 1, 2
+    # Daily and per-meal nutrient totals are the *logged* Yazio macros.
+    "INTAKE_ON": """
+        SELECT day AS src, key AS dst, amount FROM (
+            SELECT log_date AS day, sum(kcal_total) AS energy, sum(protein_total) AS protein,
+                   sum(carbs_total) AS carbohydrate, sum(fat_total) AS fat
+            FROM yazio_log GROUP BY log_date
+        ) UNPIVOT (amount FOR key IN (energy, protein, carbohydrate, fat))
     """,
-    "LOGGED_ON": f"""
-        SELECT correlation_id AS src, CAST(min(start_ts) AT TIME ZONE '{TZ}' AS DATE) AS dst
-        FROM measurements WHERE correlation_id IS NOT NULL GROUP BY correlation_id
-    """,
+    "LOGGED_ON": "SELECT DISTINCT log_date || '|' || meal AS src, log_date AS dst FROM yazio_log",
     "CONTAINS": """
-        SELECT correlation_id AS src, metric AS dst, sum(value_num) AS amount
-        FROM measurements WHERE correlation_id IS NOT NULL AND metric LIKE 'Dietary%' GROUP BY 1, 2
+        SELECT id AS src, key AS dst, amount FROM (
+            SELECT log_date || '|' || meal AS id, sum(kcal_total) AS energy,
+                   sum(protein_total) AS protein, sum(carbs_total) AS carbohydrate,
+                   sum(fat_total) AS fat
+            FROM yazio_log GROUP BY log_date, meal
+        ) UNPIVOT (amount FOR key IN (energy, protein, carbohydrate, fat))
     """,
     "COMPOSED_OF": """
         SELECT fdc_id AS src, ingredient_key AS dst, gram_weight
         FROM food_ingredients
     """,
+    # The reconciled link: a logged meal → its canonical USDA foods (portion grams).
+    "EATEN": """
+        SELECT l.log_date || '|' || l.meal AS src, m.fdc_id AS dst,
+               sum(l.amount) AS grams, sum(l.portions) AS portions
+        FROM yazio_log l JOIN food_map m ON l.product = m.product
+        WHERE m.fdc_id IS NOT NULL AND m.fdc_id IN (SELECT fdc_id FROM foods)
+        GROUP BY 1, m.fdc_id
+    """,
+    # Each USDA food → its per-100g nutrient profile (macros + key micros).
+    "HAS_NUTRIENT": "SELECT u.fdc_id AS src, m.nkey AS dst, u.per_100g FROM ("
+        "SELECT fdc_id, col, per_100g FROM foods UNPIVOT (per_100g FOR col IN ("
+        + ", ".join(c for c, _k, _n, _u in NUTRIENT_COLS) + "))) u JOIN (VALUES "
+        + ", ".join(f"('{c}', '{k}')" for c, k, _n, _u in NUTRIENT_COLS)
+        + ") m(col, nkey) ON u.col = m.col WHERE u.per_100g IS NOT NULL",
     "OBSERVED_ON": f"""
         SELECT CASE metric {' '.join(f"WHEN '{m}' THEN '{s}'" for m, s in _SYMPTOMS.items())} END AS src,
                {_LOCAL_DAY} AS dst, any_value(value_label) AS value

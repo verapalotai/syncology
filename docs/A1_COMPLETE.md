@@ -51,10 +51,14 @@ didn't exist until this).
 
 **Kuzu graph** — a `Day` spine integrating everything:
 - Nodes: Day (1,647) · CyclePhase · Biomarker (84) · LabResult (755) ·
-  ReferenceRange (83) · Nutrient (38) · Food (13,692) · Ingredient (2,332) ·
-  Meal (5,968) · Symptom (4) · Activity (147)
+  ReferenceRange (83) · Nutrient (16) · Food (13,692) · Ingredient (2,332) ·
+  Meal (844) · Symptom (4) · Activity (147)
 - Edges: MEASURED_AS · RESULT_ON · REF_FOR · IN_PHASE · PERFORMED_ON ·
-  INTAKE_ON · LOGGED_ON · CONTAINS (80,411) · COMPOSED_OF (18,584) · OBSERVED_ON
+  INTAKE_ON · LOGGED_ON · CONTAINS · **EATEN** (Meal→Food, 4,618 — the reconciled
+  link) · **HAS_NUTRIENT** (Food→Nutrient, 207,710) · COMPOSED_OF (18,584) · OBSERVED_ON
+- The nutrition layer is the Yazio named log resolved to USDA: traversing
+  `Meal-EATEN→Food-HAS_NUTRIENT→Nutrient` derives nutrients never logged (e.g. daily
+  magnesium). The `food_map` reconciliation is what powers `EATEN`.
 
 ## Two entity-resolution regimes (the write-up story)
 

@@ -7,15 +7,18 @@ inferred cycle phase). Node types follow the A1 handoff: Biomarker, Nutrient,
 Food, Ingredient, CyclePhase, Symptom, Activity, plus LabResult (a measurement),
 Day, and ReferenceRange.
 
-**Food vs Meal.** ``Food`` is the *canonical* USDA food entity (the vocabulary
-A5's log_meal resolves against), composed of ``Ingredient`` nodes via
-``COMPOSED_OF`` (USDA FoodData Central composition). ``Meal`` is a *logged*
-consumption event (a Yazio correlation), linked to its ``Day`` and its
-``Nutrient`` totals. Linking a specific ``Meal`` to its canonical ``Food`` is not
-yet possible — the Apple Health nutrition export (correlations, unnamed) and the
-Yazio CSV (named products) share no key — so the reconciliation (``food_map``)
-lives in DuckDB, and the graph carries the canonical Food+Ingredient reference
-layer plus the personal Meal/Nutrient/Day layer independently.
+**Food ↔ Meal — the link.** ``Food`` is the *canonical* USDA food entity, composed
+of ``Ingredient`` nodes via ``COMPOSED_OF`` and carrying its per-100g nutrient
+profile via ``HAS_NUTRIENT`` (USDA FoodData Central). ``Meal`` is a *logged*
+consumption event (a Yazio eating occasion: a date + meal type), linked to its
+``Day`` (``LOGGED_ON``), to the canonical ``Food``s it consists of with the portion
+in grams (``EATEN``), and to its logged macro ``Nutrient`` totals (``CONTAINS``).
+
+``Meal —EATEN→ Food —HAS_NUTRIENT→ Nutrient`` is the join the food-reconciliation
+benchmark exists to make possible: the ``food_map`` reconciliation (Yazio product →
+USDA ``fdc_id``) populates ``EATEN``, so a logged meal traverses to the full USDA
+nutrient profile of its foods — including micronutrients the log itself never
+recorded (magnesium consumed, etc. = Σ portion/100 × food's per-100g amount).
 """
 
 from __future__ import annotations
@@ -41,8 +44,11 @@ NODE_TABLES: tuple[str, ...] = (
     "CREATE NODE TABLE Food(fdc_id INT64, description STRING, category STRING, "
     "data_type STRING, energy_kcal DOUBLE, protein_g DOUBLE, carbs_g DOUBLE, "
     "fat_g DOUBLE, PRIMARY KEY(fdc_id))",
-    # A logged food/meal event (Yazio correlation) — the consumption side.
-    "CREATE NODE TABLE Meal(id STRING, source STRING, logged_ts TIMESTAMP, PRIMARY KEY(id))",
+    # A logged eating occasion (Yazio: a date + meal type) — the consumption side,
+    # with the macro totals as logged.
+    "CREATE NODE TABLE Meal(id STRING, source STRING, logged_ts TIMESTAMP, "
+    "meal_type STRING, kcal DOUBLE, protein_g DOUBLE, fat_g DOUBLE, carbs_g DOUBLE, "
+    "PRIMARY KEY(id))",
     "CREATE NODE TABLE Ingredient(key STRING, name STRING, PRIMARY KEY(key))",
     "CREATE NODE TABLE Symptom(key STRING, name STRING, category STRING, PRIMARY KEY(key))",
     "CREATE NODE TABLE Activity(id STRING, activity_type STRING, start_ts TIMESTAMP, "
@@ -60,6 +66,10 @@ REL_TABLES: tuple[str, ...] = (
     "CREATE REL TABLE CONTAINS(FROM Meal TO Nutrient, amount DOUBLE)",
     "CREATE REL TABLE COMPOSED_OF(FROM Food TO Ingredient, gram_weight DOUBLE)",
     "CREATE REL TABLE OBSERVED_ON(FROM Symptom TO Day, value STRING)",
+    # The reconciled link: a logged meal → its canonical USDA foods (portion grams),
+    # and each food → its per-100g nutrient profile.
+    "CREATE REL TABLE EATEN(FROM Meal TO Food, grams DOUBLE, portions DOUBLE)",
+    "CREATE REL TABLE HAS_NUTRIENT(FROM Food TO Nutrient, per_100g DOUBLE)",
 )
 
 
@@ -70,6 +80,7 @@ NODE_NAMES: tuple[str, ...] = (
 REL_NAMES: tuple[str, ...] = (
     "MEASURED_AS", "RESULT_ON", "REF_FOR", "IN_PHASE", "PERFORMED_ON",
     "INTAKE_ON", "LOGGED_ON", "CONTAINS", "COMPOSED_OF", "OBSERVED_ON",
+    "EATEN", "HAS_NUTRIENT",
 )
 
 

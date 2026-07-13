@@ -55,6 +55,11 @@ is the *structure*, not my data.
     <span class="lg" style="background:#E69F00"></span>Labs<br>
     <span class="lg" style="background:#009E73"></span>Nutrition<br>
     <span class="lg" style="background:#CC79A7"></span>Activity
+    <div style="margin-top:7px;padding-top:6px;border-top:1px solid #eee;">
+      <span style="display:inline-block;width:16px;border-bottom:2px dashed #b06ab0;
+            margin-right:6px;vertical-align:3px;"></span>link that needs<br>
+      <span style="margin-left:22px;">entity resolution (not built yet)</span>
+    </div>
   </div>
   <div id="panel"></div>
   <button id="reset">Reset view</button>
@@ -78,14 +83,14 @@ is the *structure*, not my data.
     n("act","Morning run","Activity","activity",{ distance:"5.2 km", duration:"31 min", energy:"410 kcal", source:"Strava" }),
     n("meal_b","Breakfast","Meal","nutrition",{ logged:"08:10", items:"oat porridge, banana" }),
     n("meal_d","Dinner","Meal","nutrition",{ logged:"19:40", items:"salmon, greens" }),
-    n("lab","Estradiol result","LabResult","labs",{ value:"1108 pmol/L", date:"2025-01-14", "as-of status":"normal" }),
-    n("bm","Estradiol","Biomarker","labs",{ category:"hormone", unit:"pmol/L", key:"estradiol" }),
-    n("rr","Estradiol range","ReferenceRange","labs",{ interval:"46–607 pmol/L", "valid from":"2024-02", note:"as-of the result's date" }),
-    n("prot","Protein","Nutrient","nutrition",{ unit:"g" }),
-    n("vitd","Vitamin D","Nutrient","nutrition",{ unit:"µg" }),
-    // --- USDA reference vocabulary (separate component) ---
-    n("food_o","Oatmeal, cooked","Food","nutrition",{ "fdc_id":"(synthetic)", "kcal/100g":"71", "protein/100g":"2.5 g" }),
-    n("food_s","Salmon, cooked","Food","nutrition",{ "fdc_id":"(synthetic)", "kcal/100g":"206", "protein/100g":"22 g" }),
+    n("lab","Estradiol — lab result","LabResult","labs",{ value:"1108 pmol/L", date:"2025-01-14", "as-of status":"normal", "measured as":"Estradiol (biomarker)" }),
+    n("bm","Estradiol (biomarker)","Biomarker","labs",{ category:"hormone", unit:"pmol/L", key:"estradiol", note:"canonical analyte — every Estradiol result links here via MEASURED_AS" }),
+    n("rr","Estradiol — reference range","ReferenceRange","labs",{ interval:"46–607 pmol/L", "valid from":"2024-02", note:"judged as-of the result's date" }),
+    n("prot","Protein","Nutrient","nutrition",{ type:"macronutrient", unit:"g", amounts:"on the CONTAINS / INTAKE_ON edges (not the node)" }),
+    n("vitd","Vitamin D","Nutrient","nutrition",{ type:"micronutrient", unit:"µg", amounts:"on the CONTAINS / INTAKE_ON edges (not the node)" }),
+    // --- USDA reference vocabulary (separate component) — Food carries its macros as node properties ---
+    n("food_o","Oatmeal, cooked","Food","nutrition",{ "fdc_id":"(synthetic)", "kcal/100g":"71", "protein/100g":"2.5 g", "vitamin D/100g":"0 µg" }),
+    n("food_s","Salmon, cooked","Food","nutrition",{ "fdc_id":"(synthetic)", "kcal/100g":"206", "protein/100g":"22 g", "vitamin D/100g":"11 µg" }),
     n("ing_oats","Rolled oats","Ingredient","nutrition",{ "used in foods":"312" }),
     n("ing_water","Water","Ingredient","nutrition",{ "used in foods":"1,204" }),
     n("ing_salmon","Atlantic salmon","Ingredient","nutrition",{ "used in foods":"46" }),
@@ -105,7 +110,11 @@ is the *structure*, not my data.
     e("day","vitd","INTAKE_ON","12 µg"),
     e("food_o","ing_oats","COMPOSED_OF","40 g"),
     e("food_o","ing_water","COMPOSED_OF","160 g"),
-    e("food_s","ing_salmon","COMPOSED_OF","150 g")
+    e("food_s","ing_salmon","COMPOSED_OF","150 g"),
+    // Dashed "ghost" links: where a logged Meal *would* connect to its canonical
+    // USDA Food — the link that has no shared key yet (see the food-retrieval study).
+    { data: { source:"meal_b", target:"food_o", rel:"needs resolution" }, classes:"ghost" },
+    { data: { source:"meal_d", target:"food_s", rel:"needs resolution" }, classes:"ghost" }
   ];
 
   var cy = cytoscape({
@@ -124,7 +133,10 @@ is the *structure*, not my data.
           "target-arrow-shape": "triangle", "arrow-scale": 0.9, "curve-style": "bezier" } },
       { selector: ".faded", style: { "opacity": 0.12, "text-opacity": 0.12 } },
       { selector: ".hi", style: { "border-color": "#333", "border-width": 3 } },
-      { selector: "edge.hi", style: { "line-color": "#333", "target-arrow-color": "#333", "width": 2.4, "color": "#333" } }
+      { selector: "edge.hi", style: { "line-color": "#333", "target-arrow-color": "#333", "width": 2.4, "color": "#333" } },
+      { selector: "edge.ghost", style: {
+          "line-style": "dashed", "line-color": "#c9a0c9", "target-arrow-color": "#c9a0c9",
+          "target-arrow-shape": "vee", "width": 1.6, "color": "#b06ab0", "font-style": "italic" } }
     ],
     layout: { name: "cose", idealEdgeLength: 95, nodeRepulsion: 9000, padding: 30, animate: true, animationDuration: 600 },
     wheelSensitivity: 0.2
@@ -155,17 +167,38 @@ is the *structure*, not my data.
 </script>
 ```
 
-## How to read it
+## How to read it — and a few honest ontology notes
 
-The graph has two components, and that's on purpose:
+The graph has **two components on purpose**, and the seam between them is the
+interesting part.
 
-- **The personal timeline** — everything hangs off a `Day`. Cycle phase, symptoms, a
+- **The personal timeline** — everything hangs off a `Day`: cycle phase, symptoms, a
   lab result (judged against the *reference range in effect on its date*), meals, daily
-  nutrient totals, and an activity all connect through it. This is what makes
-  cross-domain questions — "average BBT by cycle phase", "protein on active vs quiet
-  days" — a single graph traversal.
+  nutrient totals, an activity. That spine is what turns cross-domain questions —
+  "average BBT by cycle phase", "protein on active vs quiet days" — into a single graph
+  traversal.
 - **The USDA reference vocabulary** — `Food → COMPOSED_OF → Ingredient`, a separate
-  island. Linking a *logged meal* to a *canonical USDA food* has no shared key, which is
-  exactly the cross-lingual matching problem the
-  [food-retrieval study](writeup_food_retrieval.qmd) is about. The gap in this picture
-  is the reason that work exists.
+  island, with each `Food` carrying its per-100g macros as **node properties** (click
+  *Salmon* to see them).
+
+The **dashed purple links** are the honest bit: they mark where a logged `Meal` *should*
+connect to its canonical `Food` (dinner → salmon), but **can't yet** — the Apple Health
+nutrition export (unnamed correlations) and the named Yazio/USDA products share no key.
+Building that link is exactly the cross-lingual matching problem the
+[food-retrieval study](writeup_food_retrieval.qmd) exists to solve. It's drawn dashed
+precisely because it isn't a real edge in the graph.
+
+A couple of modelling choices worth calling out, since the picture invites the questions:
+
+- **`Nutrient` is a shared *type* node, not a value.** `Protein` looks "empty" because
+  the quantity lives on the **edge**, not the node — `Breakfast —CONTAINS·18 g→ Protein`,
+  `Day —INTAKE_ON·92 g→ Protein`. One canonical `Protein` node is reused everywhere
+  (like `Biomarker`); amounts are edge properties. Hover an edge to see them.
+- **Nutrition attaches to the `Meal`, not (yet) to the specific `Food`.** `CONTAINS` runs
+  `Meal → Nutrient` — because the Apple Health source gives per-meal nutrient *totals*,
+  not a food breakdown. Tracing "the vitamin D in dinner came from the salmon" needs the
+  dashed `Meal → Food` link above; until that's resolved, a food's nutrition lives on the
+  `Food` node's own properties instead.
+- **`Estradiol` *is* connected to its result** — `LabResult —MEASURED_AS→ Biomarker`
+  (and `ReferenceRange —REF_FOR→ Biomarker`). Click the biomarker node to trace the chain;
+  the three "Estradiol" nodes are a result, its analyte, and its reference range.

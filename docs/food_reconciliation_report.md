@@ -290,6 +290,51 @@ the structural fix: **confidence routing buys coverage without paying head accur
 which merging could not.** Production choice: translate → USDA-first bi-encoder →
 OFF fallback below a confidence threshold.
 
+## Retrieval-systems matrix
+
+Everything so far uses one retrieval method — dense single-vector cosine. Does a more
+sophisticated retriever help? Holding the corpus (USDA) and embedder (bge-m3) fixed,
+we vary only the method: **dense**, **sparse BM25**, **hybrid** (dense + BM25 fused by
+reciprocal-rank fusion), and **bge-m3 late-interaction (ColBERT MaxSim)**.
+
+**Translated query** (the production path):
+
+| system | Success@1 [95% CI] | S@5 | MRR | nDCG@10 | vs dense (McNemar) |
+|---|---|---|---|---|---|
+| dense | 0.877 [0.828, 0.922] | 0.926 | 0.897 | 0.769 | — |
+| sparse (BM25) | 0.848 [0.799, 0.897] | 0.912 | 0.876 | 0.841 | +12/−18, p = 0.36 |
+| hybrid (RRF) | 0.882 [0.833, 0.926] | 0.936 | 0.905 | 0.810 | +8/−7, p = 1.0 |
+| ColBERT | 0.877 [0.833, 0.922] | 0.922 | 0.893 | 0.838 | +3/−3, p = 1.0 |
+
+**All four are statistically indistinguishable on Success@1** — every CI overlaps and
+every McNemar test against dense is non-significant. The much-cited "hybrid always
+helps" gives +0.5 pp here (p = 1.0); ColBERT's extra multi-vector cost buys nothing on
+top-1. The one real difference is **nDCG@10**: BM25 and ColBERT rank *more* correct
+variants into the top-10 (0.84 vs dense's 0.77) — a graded-ranking gain from lexical /
+token-level matching that never reaches rank 1, where a correct row already sits.
+
+**Raw query** (no translation) — here method choice *does* matter, and negatively:
+
+```
+dense    0.299     sparse   0.162  (McNemar p = 8e-7, worse)
+colbert  0.314     hybrid   0.216  (McNemar p = 0.002, worse)
+```
+
+BM25 has essentially no cross-lingual signal (`Uborka` and `Cucumber` share no
+tokens), so it collapses and *drags hybrid down with it*. Only ColBERT ties dense —
+token-level matching is marginally more robust to the language gap, but not
+significantly. Lexical retrieval is not an alternative to translation; it *depends*
+on it.
+
+**Synthesis — three flat axes, two real levers.** Across every sophistication knob
+tested — embedder scale (§findings 2), reranking (§findings 4), and now the retrieval
+algorithm — the differences are inside the noise. What actually moves Success@1 is
+**query transformation** (translation: 0.30 → 0.88, ~2.5×) and **corpus coverage**
+(OFF, via the cascade, recovering the OOV tail). For short-text cross-lingual entity
+linking the engineering lesson is contrarian and consistent: spend on *translating the
+query* and *covering the vocabulary*, not on a bigger model, a reranker, or a fancier
+index.
+
 ## Limitations
 
 - Gold labels are concept-level and semi-automatically seeded; a handful of
@@ -301,12 +346,12 @@ OFF fallback below a confidence threshold.
   not adjudicated by hand; the `regional` and `branded` strata are small (N=3, N=12),
   so their per-stratum CIs are wide — enough to flag *where* the tail is, not to
   measure it precisely. Enlarging those two strata is the cheapest next data step.
-- Translation quality is itself a dependency (a mistranslation propagates);
-  spot-checked as high but not measured.
-- HyDE, hybrid dense+sparse retrieval (bge-m3 supports it natively), and
-  attribute-serialized reranking are grounded options left for future iterations
-  — the stratum table points at Open Food Facts (coverage) and Ditto-style
-  attribute matching (branded) as the two highest-value moves.
+- The retrieval matrix holds the corpus fixed at USDA (ColBERT's per-token index does
+  not scale to the 360k OFF corpus without an ANN backend); the algorithm comparison
+  is therefore clean but does not re-test the fancier retrievers *on* the OFF tail.
+- HyDE and attribute-serialized (Ditto-style) reranking remain untested; the stratum
+  table points at Ditto-style attribute matching as the most promising remaining move
+  for the `branded` soft spot.
 
 ## Reproduce
 
@@ -324,6 +369,9 @@ SYNCOLOGY_FOOD_GOLD=data/raw/personal/nutrition/food_gold_hard.json \
 # confidence-routed cascade — accuracy-vs-τ frontier:
 SYNCOLOGY_FOOD_GOLD=data/raw/personal/nutrition/food_gold_hard.json \
   uv run python scripts/eval_food_cascade.py
+# retrieval-systems matrix — dense/sparse/hybrid/ColBERT (needs the `retrieval` extra):
+SYNCOLOGY_FOOD_GOLD=data/raw/personal/nutrition/food_gold_hard.json \
+  uv run python scripts/eval_retrieval_matrix.py
 ```
 
 The OFF CSV export (public, ~1.3 GB gz) is fetched once from

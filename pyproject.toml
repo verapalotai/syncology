@@ -22,6 +22,7 @@ llm = ["instructor>=1.6", "anthropic>=0.40", "openai>=1.40"]
 graph = ["kuzu>=0.6"]
 embed = ["sentence-transformers>=3.3", "torch>=2.4", "einops>=0.8"]
 retrieval = ["rank-bm25>=0.2", "FlagEmbedding>=1.3"]
+viz = ["matplotlib>=3.8"]
 
 [dependency-groups]
 dev = ["pytest>=8.3", "ruff>=0.7"]

@@ -8,6 +8,7 @@ project:
     - docs/writeup_food_retrieval.qmd
     - docs/writeup_biomarker_resolution.qmd
     - docs/writeup_cycle_inference.qmd
+    - docs/graph_explorer.qmd
 
 website:
   title: "Syncology"
@@ -26,6 +27,8 @@ website:
             text: "When rules beat the LLM"
           - href: docs/writeup_cycle_inference.qmd
             text: "Reading a cycle from noise"
+      - href: docs/graph_explorer.qmd
+        text: "Explore the graph"
     right:
       - icon: github
         href: "https://github.com/verapalotai/syncology"

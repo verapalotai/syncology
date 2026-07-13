@@ -1,0 +1,171 @@
+---
+title: "Explore the knowledge graph"
+subtitle: "The node & relationship schema, wired up with synthetic example data — click around"
+author: "Veronika Palotai"
+date: "2026-07-13"
+categories: [knowledge-graph, kuzu, visualization]
+format:
+  html:
+    page-layout: full
+    toc: false
+---
+
+The warehouse feeds a **Kuzu** property graph with a `Day` spine that stitches every
+domain together — cycle phase, labs, nutrition, activity. Below is that exact schema
+(11 node types, 10 relationship types), populated with a small **synthetic** example
+day so you can see how a real record threads together. **Click any node** to highlight
+its connections and inspect its (fake) properties; click the background to reset.
+
+::: {.callout-note appearance="simple"}
+Every value here is invented. No real measurements appear anywhere on this site — this
+is the *structure*, not my data.
+:::
+
+```{=html}
+<style>
+  #graph-wrap { position: relative; width: 100%; height: 640px; border: 1px solid #e6e6e6;
+                border-radius: 8px; background: #fbfbfb; overflow: hidden; }
+  #cy { width: 100%; height: 100%; }
+  #legend { position: absolute; top: 12px; left: 12px; background: rgba(255,255,255,.92);
+            border: 1px solid #e6e6e6; border-radius: 6px; padding: 10px 12px; font-size: 12px;
+            line-height: 1.7; z-index: 5; }
+  #legend b { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: #666; }
+  .lg { display: inline-block; width: 11px; height: 11px; border-radius: 3px; margin-right: 6px;
+        vertical-align: -1px; }
+  #panel { position: absolute; top: 12px; right: 12px; width: 240px; background: rgba(255,255,255,.96);
+           border: 1px solid #e6e6e6; border-radius: 6px; padding: 12px 14px; font-size: 13px;
+           z-index: 5; display: none; box-shadow: 0 2px 10px rgba(0,0,0,.06); }
+  #panel .ptype { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+  #panel h3 { margin: 4px 0 8px; font-size: 16px; }
+  #panel table { width: 100%; border-collapse: collapse; }
+  #panel td { padding: 2px 0; vertical-align: top; }
+  #panel td.k { color: #888; padding-right: 8px; white-space: nowrap; }
+  #reset { position: absolute; bottom: 12px; left: 12px; z-index: 5; font-size: 12px;
+           background: #fff; border: 1px solid #ccc; border-radius: 5px; padding: 5px 10px;
+           cursor: pointer; color: #333; }
+  #hint { position: absolute; bottom: 12px; right: 14px; z-index: 5; font-size: 11px; color: #999; }
+</style>
+
+<div id="graph-wrap">
+  <div id="cy"></div>
+  <div id="legend">
+    <b>Node domains</b><br>
+    <span class="lg" style="background:#1a1a1a"></span>Day (spine)<br>
+    <span class="lg" style="background:#0072B2"></span>Cycle<br>
+    <span class="lg" style="background:#E69F00"></span>Labs<br>
+    <span class="lg" style="background:#009E73"></span>Nutrition<br>
+    <span class="lg" style="background:#CC79A7"></span>Activity
+  </div>
+  <div id="panel"></div>
+  <button id="reset">Reset view</button>
+  <span id="hint">drag to pan · scroll to zoom</span>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/cytoscape@3.30.2/dist/cytoscape.min.js"></script>
+<script>
+(function () {
+  var C = { spine:"#1a1a1a", cycle:"#0072B2", labs:"#E69F00", nutrition:"#009E73", activity:"#CC79A7" };
+  function n(id, label, type, domain, props) {
+    return { data: { id:id, label:label, ntype:type, color:C[domain], props:props } };
+  }
+  function e(s, t, rel, extra) { return { data: { source:s, target:t, rel:rel + (extra?" · "+extra:"") } }; }
+
+  var elements = [
+    // --- personal timeline (Day-centred) ---
+    n("day","2025-01-14","Day","spine",{ "cycle day":"14", weekday:"Tuesday", "phase":"ovulation" }),
+    n("phase","ovulation","CyclePhase","cycle",{ "fertility zone":"fertile", "confirmed by":"BBT shift + mucus peak" }),
+    n("sym","Cervical mucus","Symptom","cycle",{ value:"egg-white", ordinal:"5 (peak fertility)" }),
+    n("act","Morning run","Activity","activity",{ distance:"5.2 km", duration:"31 min", energy:"410 kcal", source:"Strava" }),
+    n("meal_b","Breakfast","Meal","nutrition",{ logged:"08:10", items:"oat porridge, banana" }),
+    n("meal_d","Dinner","Meal","nutrition",{ logged:"19:40", items:"salmon, greens" }),
+    n("lab","Estradiol result","LabResult","labs",{ value:"1108 pmol/L", date:"2025-01-14", "as-of status":"normal" }),
+    n("bm","Estradiol","Biomarker","labs",{ category:"hormone", unit:"pmol/L", key:"estradiol" }),
+    n("rr","Estradiol range","ReferenceRange","labs",{ interval:"46–607 pmol/L", "valid from":"2024-02", note:"as-of the result's date" }),
+    n("prot","Protein","Nutrient","nutrition",{ unit:"g" }),
+    n("vitd","Vitamin D","Nutrient","nutrition",{ unit:"µg" }),
+    // --- USDA reference vocabulary (separate component) ---
+    n("food_o","Oatmeal, cooked","Food","nutrition",{ "fdc_id":"(synthetic)", "kcal/100g":"71", "protein/100g":"2.5 g" }),
+    n("food_s","Salmon, cooked","Food","nutrition",{ "fdc_id":"(synthetic)", "kcal/100g":"206", "protein/100g":"22 g" }),
+    n("ing_oats","Rolled oats","Ingredient","nutrition",{ "used in foods":"312" }),
+    n("ing_water","Water","Ingredient","nutrition",{ "used in foods":"1,204" }),
+    n("ing_salmon","Atlantic salmon","Ingredient","nutrition",{ "used in foods":"46" }),
+
+    e("day","phase","IN_PHASE"),
+    e("sym","day","OBSERVED_ON","egg-white"),
+    e("act","day","PERFORMED_ON"),
+    e("meal_b","day","LOGGED_ON"),
+    e("meal_d","day","LOGGED_ON"),
+    e("lab","day","RESULT_ON"),
+    e("lab","bm","MEASURED_AS"),
+    e("rr","bm","REF_FOR"),
+    e("meal_b","prot","CONTAINS","18 g"),
+    e("meal_d","prot","CONTAINS","34 g"),
+    e("meal_d","vitd","CONTAINS","8 µg"),
+    e("day","prot","INTAKE_ON","92 g"),
+    e("day","vitd","INTAKE_ON","12 µg"),
+    e("food_o","ing_oats","COMPOSED_OF","40 g"),
+    e("food_o","ing_water","COMPOSED_OF","160 g"),
+    e("food_s","ing_salmon","COMPOSED_OF","150 g")
+  ];
+
+  var cy = cytoscape({
+    container: document.getElementById("cy"),
+    elements: elements,
+    style: [
+      { selector: "node", style: {
+          "background-color": "data(color)", "label": "data(label)", "color": "#222",
+          "font-size": 10, "text-wrap": "wrap", "text-max-width": 92, "text-valign": "bottom",
+          "text-margin-y": 3, "width": 26, "height": 26, "border-width": 2, "border-color": "#fff" } },
+      { selector: 'node[ntype = "Day"]', style: { "width": 46, "height": 46, "font-size": 12, "font-weight": "bold" } },
+      { selector: "edge", style: {
+          "label": "data(rel)", "font-size": 8, "color": "#8a8a8a", "text-rotation": "autorotate",
+          "text-background-color": "#fbfbfb", "text-background-opacity": 1, "text-background-padding": 2,
+          "width": 1.4, "line-color": "#c8c8c8", "target-arrow-color": "#c8c8c8",
+          "target-arrow-shape": "triangle", "arrow-scale": 0.9, "curve-style": "bezier" } },
+      { selector: ".faded", style: { "opacity": 0.12, "text-opacity": 0.12 } },
+      { selector: ".hi", style: { "border-color": "#333", "border-width": 3 } },
+      { selector: "edge.hi", style: { "line-color": "#333", "target-arrow-color": "#333", "width": 2.4, "color": "#333" } }
+    ],
+    layout: { name: "cose", idealEdgeLength: 95, nodeRepulsion: 9000, padding: 30, animate: true, animationDuration: 600 },
+    wheelSensitivity: 0.2
+  });
+
+  var panel = document.getElementById("panel");
+  function showPanel(node) {
+    var d = node.data(), rows = "";
+    for (var k in d.props) rows += '<tr><td class="k">' + k + '</td><td>' + d.props[k] + "</td></tr>";
+    panel.innerHTML = '<div class="ptype" style="color:' + d.color + '">' + d.ntype +
+      '</div><h3>' + d.label + "</h3><table>" + rows + "</table>";
+    panel.style.display = "block";
+  }
+  cy.on("tap", "node", function (ev) {
+    var node = ev.target, hood = node.closedNeighborhood();
+    cy.elements().addClass("faded").removeClass("hi");
+    hood.removeClass("faded").addClass("hi");
+    showPanel(node);
+  });
+  cy.on("tap", function (ev) {
+    if (ev.target === cy) { cy.elements().removeClass("faded hi"); panel.style.display = "none"; }
+  });
+  document.getElementById("reset").onclick = function () {
+    cy.elements().removeClass("faded hi"); panel.style.display = "none";
+    cy.animate({ fit: { padding: 30 } }, { duration: 400 });
+  };
+})();
+</script>
+```
+
+## How to read it
+
+The graph has two components, and that's on purpose:
+
+- **The personal timeline** — everything hangs off a `Day`. Cycle phase, symptoms, a
+  lab result (judged against the *reference range in effect on its date*), meals, daily
+  nutrient totals, and an activity all connect through it. This is what makes
+  cross-domain questions — "average BBT by cycle phase", "protein on active vs quiet
+  days" — a single graph traversal.
+- **The USDA reference vocabulary** — `Food → COMPOSED_OF → Ingredient`, a separate
+  island. Linking a *logged meal* to a *canonical USDA food* has no shared key, which is
+  exactly the cross-lingual matching problem the
+  [food-retrieval study](writeup_food_retrieval.qmd) is about. The gap in this picture
+  is the reason that work exists.

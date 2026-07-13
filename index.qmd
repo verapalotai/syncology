@@ -23,6 +23,7 @@ Three of those problems turned into small, rigorous studies — entity resolutio
 opposite regimes (an open cross-lingual vocabulary vs a small closed one), and inferring
 a menstrual cycle from irregular data. The through-line is method discipline: put
 confidence intervals on everything, match the tool to the regime, and say "unknown" when
-the data won't support a call.
+the data won't support a call. You can also [**explore the knowledge-graph
+schema**](docs/graph_explorer.qmd) interactively — synthetic data, click around.
 
 ## Write-ups

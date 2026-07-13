@@ -51,6 +51,7 @@ flowchart LR
   FDC[USDA FDC CSVs] --> FD[(foods)]
   FDC --> ING[(ingredients)]
   FDC --> FI[(food_ingredients)]
+  OFF[OFF CSV export] --> OF[(off_foods)]
   YZ[yazio.csv] --> YL[(yazio_log)] --> YF[(yazio_foods)]
   YF -->|translate+embed+macro| FM[(food_map)]
   FD --> FM
@@ -347,6 +348,15 @@ per-100g `energy_kcal`, `protein_g`, `carbs_g`, `fat_g`, `saturated_fat_g`,
 `fiber_g`, `sugars_g`, `cholesterol_mg`, `sodium_mg`, `potassium_mg`, `calcium_mg`,
 `iron_mg`, `magnesium_mg`, `vitamin_d_ug`, `vitamin_b12_ug`, `folate_ug`.
 
+### `off_foods` — Open Food Facts second corpus (360,892 rows)
+
+Branded/regional European product coverage that USDA lacks, for the retrieval
+error tail (see `docs/food_reconciliation_report.md`). Products sold in Hungary /
+Germany / Austria, from the public OFF CSV export. `off_code` (**PK**, barcode) ·
+`description` (original-language product name) · `brands` · `categories` · per-100g
+`energy_kcal` / `protein_g` / `fat_g` / `carbs_g` (nullable; 60% carry macros).
+Deduplicated on (name, brand).
+
 ### `ingredients` — canonical ingredient vocabulary (2,332 rows)
 
 `key` (**PK**) · `name` · `n_foods` (how many foods use it). Extracted from the
@@ -450,6 +460,7 @@ uv run python scripts/extract_labs.py            # lab_results (local or --engin
 uv run python scripts/resolve_biomarkers.py      # biomarker_registry + biomarker_map + lab_results_canonical
 uv run python scripts/build_activities.py        # activities + workouts → daily_activity_events
 uv run python scripts/build_foods.py             # USDA foods + ingredients + composition
+uv run python scripts/build_openfoodfacts.py     # OFF second corpus (off_foods; needs the CSV)
 uv run python scripts/reconcile_foods.py         # Yazio → USDA reconciliation (food_map)
 uv run python scripts/build_graph.py             # Kuzu knowledge graph + demo traversals
 ```

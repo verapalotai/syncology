@@ -26,3 +26,4 @@ kuzu_db/
 .DS_Store
 .idea/
 .vscode/
+data/raw/public/openfoodfacts/

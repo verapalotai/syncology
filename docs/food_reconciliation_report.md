@@ -189,6 +189,57 @@ the compound/prepared cases translation already handles well:
 Residual **modifier distraction** (`green apple`→"Green peas") still occurs but is
 now a minority of the simple/compound tail, not its dominant cause.
 
+## Second corpus — Open Food Facts (testing the coverage thesis)
+
+The stratum table makes a falsifiable claim: the tail is a **coverage** gap, not a
+modelling one — so a second corpus should close it and a bigger model should not. We
+test it directly. **Open Food Facts** (crowd-sourced, multilingual product database)
+contributes **360,892** products sold in Hungary / Germany / Austria — the countries
+the diet is logged in, so the corpus is chosen by *provenance, not by peeking at the
+gold*. Names are kept in their original language (an OFF product named "Lecsó" is
+exactly what the raw Hungarian query should find). Same embedder (bge-m3), same gold;
+we retrieve against USDA alone vs USDA + OFF.
+
+**Per-stratum Success@1, translated query** (bge-m3):
+
+| stratum | N | USDA | USDA + OFF |
+|---|---|---|---|
+| regional / OOV | 3 | **0.000** | **0.667** ↑ |
+| branded | 12 | 0.750 | 0.833 ↑ |
+| prepared | 54 | 0.944 | 0.944 → |
+| simple | 114 | 0.877 | 0.842 ↓ |
+| compound | 21 | 0.905 | 0.810 ↓ |
+| **overall** | 204 | 0.877 | 0.863 |
+
+**The coverage thesis holds — regional recovers from zero, on real OFF rows:**
+
+```
+✓ spicy ajvar  → [OFF] 'Ajvar ljuti'     (absent from USDA)
+✓ lecsó        → [OFF] 'Lecsó'           (absent from USDA)
+✗ edamame …    → [USDA] 'Edamame, cooked' (a mislabelled generic, not OOV)
+```
+
+Both genuinely out-of-vocabulary foods are found — and the winning row is literally
+an OFF product, not a USDA near-miss. Branded improves too (0.75→0.83). This is the
+result the stratification predicted: **coverage, supplied by a second corpus.**
+
+**But naive concatenation is the wrong integration.** Merging 360k branded/regional
+products *dilutes the clean head*: simple and compound dip, and overall the change is
+**not significant** (McNemar: +OFF fixes 12, breaks 15, p = 0.70). On the *raw* query
+path it is significantly *worse* (0.299→0.230, p = 0.024) — untranslated queries flood
+into the much larger, noisier OFF name space. OFF ends up supplying the *majority* of
+even the simple-stratum hits (77 of 96): mostly valid, exact-named matches
+(`onion`→"Onions", `paprika`→"paprika", often cleaner than USDA's inverted
+"Onions, raw"), but with enough keyword-loose noise (`oat muffin`→"oreo muffin") to
+cost a few points of head precision.
+
+**Conclusion.** The tail is coverage-bound and OFF closes it — a bigger model never
+could. But you cannot just merge indices: that trades head accuracy for tail recovery
+(a wash at best). The right architecture is a **cascade** — resolve against the clean
+USDA generics first, fall back to OFF only when USDA confidence is low or the query is
+OOV. That confidence-routing is a *retrieval-systems* question, and motivates the
+retrieval ablation next.
+
 ## Limitations
 
 - Gold labels are concept-level and semi-automatically seeded; a handful of
@@ -213,7 +264,15 @@ now a minority of the simple/compound tail, not its dominant cause.
 uv run python scripts/build_foods.py                    # USDA foods + ingredients
 uv run python scripts/reconcile_foods.py                # Yazio → USDA (translate + embed)
 uv run python scripts/benchmark_food_embedders.py --rerank   # headline benchmark
+uv run python scripts/build_openfoodfacts.py            # OFF second corpus (needs the CSV)
 # rigor pass — bootstrap CIs, per-stratum, McNemar (hard set):
 SYNCOLOGY_FOOD_GOLD=data/raw/personal/nutrition/food_gold_hard.json \
   uv run python scripts/eval_food_rigor.py
+# corpus ablation — USDA vs USDA+OFF, per stratum:
+SYNCOLOGY_FOOD_GOLD=data/raw/personal/nutrition/food_gold_hard.json \
+  uv run python scripts/eval_food_corpus.py
 ```
+
+The OFF CSV export (public, ~1.3 GB gz) is fetched once from
+`static.openfoodfacts.org/data/en.openfoodfacts.org.products.csv.gz` into gitignored
+`data/raw/public/openfoodfacts/`.

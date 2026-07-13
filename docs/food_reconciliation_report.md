@@ -237,8 +237,58 @@ cost a few points of head precision.
 could. But you cannot just merge indices: that trades head accuracy for tail recovery
 (a wash at best). The right architecture is a **cascade** — resolve against the clean
 USDA generics first, fall back to OFF only when USDA confidence is low or the query is
-OOV. That confidence-routing is a *retrieval-systems* question, and motivates the
-retrieval ablation next.
+OOV.
+
+## Confidence-routed cascade
+
+Naive concatenation is exactly a **max-confidence router**: argmax over the union
+picks whichever corpus has the higher top-1 cosine, so OFF's spuriously-high exact
+matches (`apple`→OFF "apple") outscore the correct USDA generic. That is *why* it
+regresses the head. A **threshold cascade** instead routes on USDA confidence
+*alone* — trust USDA's top-1 when its cosine ≥ τ, fall back to OFF only when USDA is
+unconfident — so a high-scoring OFF row can never override a confident USDA hit.
+
+The confident head and the OOV tail turn out to be cleanly **cosine-separable** (USDA
+top-1 cosine: median 0.81, but the OOV foods sit near the 0.51 floor). Reporting the
+whole accuracy-vs-τ frontier rather than one tuned point (translated query, bge-m3):
+
+| τ | % → OFF | overall | head | regional | simple |
+|---|---|---|---|---|---|
+| ≤ 0.55 (USDA-only) | 0% | 0.877 | 0.899 | 0.000 | 0.877 |
+| 0.65 | 5% | **0.897** | 0.910 | 0.667 | 0.895 |
+| 0.70 | 10% | **0.897** | 0.910 | 0.667 | 0.886 |
+| 0.75 | 25% | 0.892 | 0.905 | 0.667 | 0.877 |
+| 0.85 | 71% | 0.863 | 0.862 | 0.667 | 0.833 |
+
+A **broad window (τ ≈ 0.60–0.75)** clears 0.89 — above both USDA-only (0.877) and the
+max-confidence merge (0.863) — so this is not a knife-edge tuned value. At a
+label-free operating point (**τ = P10 of the USDA cosine** — route only the
+least-confident decile, no gold used to pick it):
+
+| system | Success@1 [95% CI] |
+|---|---|
+| USDA-only | 0.877 [0.828, 0.922] |
+| max-confidence merge | 0.863 [0.814, 0.907] |
+| **cascade @ τ=0.70** | **0.897 [0.853, 0.936]** |
+
+Per-stratum, USDA-only → cascade, **nothing regresses**:
+
+```
+regional  0.000 → 0.667    (recovered from OFF)
+compound  0.905 → 0.952
+simple    0.877 → 0.886
+prepared  0.944 → 0.944
+branded   0.750 → 0.750
+```
+
+The cascade recovers the OOV tail **at zero head cost** — it even nudges the head up,
+by letting OFF correct a few low-confidence USDA misses. It cleanly reverses the
+merge's head regression (McNemar cascade-vs-merge +13 / −6). The overall +2 pp over
+USDA-only is not individually significant at N=204 (regional is only 3 foods, so its
+recovery moves the aggregate little) — the result is the *per-stratum dominance* and
+the structural fix: **confidence routing buys coverage without paying head accuracy,
+which merging could not.** Production choice: translate → USDA-first bi-encoder →
+OFF fallback below a confidence threshold.
 
 ## Limitations
 
@@ -271,6 +321,9 @@ SYNCOLOGY_FOOD_GOLD=data/raw/personal/nutrition/food_gold_hard.json \
 # corpus ablation — USDA vs USDA+OFF, per stratum:
 SYNCOLOGY_FOOD_GOLD=data/raw/personal/nutrition/food_gold_hard.json \
   uv run python scripts/eval_food_corpus.py
+# confidence-routed cascade — accuracy-vs-τ frontier:
+SYNCOLOGY_FOOD_GOLD=data/raw/personal/nutrition/food_gold_hard.json \
+  uv run python scripts/eval_food_cascade.py
 ```
 
 The OFF CSV export (public, ~1.3 GB gz) is fetched once from

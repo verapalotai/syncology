@@ -65,6 +65,19 @@ def bootstrap_ci(
     return float(values.mean()), float(lo), float(hi)
 
 
+def cascade_route(
+    usda_cos: np.ndarray, usda_ok: np.ndarray, off_ok: np.ndarray, tau: float
+) -> np.ndarray:
+    """Confidence-routed cascade Success@1 (per query).
+
+    Trust the USDA top-1 whenever its cosine ≥ ``tau``; fall back to the OFF top-1
+    only when USDA is unconfident. Routing depends on USDA confidence *alone* — not
+    on OFF's score — which is what protects the confident head from OFF's
+    spuriously-high exact-string matches.
+    """
+    return np.where(np.asarray(usda_cos) >= tau, np.asarray(usda_ok), np.asarray(off_ok))
+
+
 def mcnemar_exact(correct_a: np.ndarray, correct_b: np.ndarray) -> dict[str, float]:
     """Paired exact McNemar test on Success@1 (binary) outcomes of two systems.
 

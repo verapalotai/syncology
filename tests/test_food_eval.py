@@ -39,6 +39,17 @@ def test_mcnemar_directional_and_symmetric():
     assert food_eval.mcnemar_exact(a, a)["p_value"] == 1.0
 
 
+def test_cascade_route_uses_usda_confidence_only():
+    u_cos = np.array([0.9, 0.5, 0.6])
+    u_ok = np.array([1, 0, 1])   # USDA correct on q0,q2; wrong on q1
+    o_ok = np.array([0, 1, 0])   # OFF correct only on q1
+    # tau=0.7: q0 stays USDA (conf), q1+q2 fall back to OFF
+    out = food_eval.cascade_route(u_cos, u_ok, o_ok, 0.7)
+    assert list(out) == [1, 1, 0]
+    # tau=0.0: never fall back → pure USDA
+    assert list(food_eval.cascade_route(u_cos, u_ok, o_ok, 0.0)) == [1, 0, 1]
+
+
 def test_classify_strata():
     assert food_labels.classify("Cékla", "boiled beetroot") == "prepared"
     assert food_labels.classify("Piros alma", "red apple") == "compound"

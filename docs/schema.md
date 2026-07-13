@@ -332,15 +332,23 @@ marts via Parquet (`scripts/build_graph.py`).
 `Biomarker` · `LabResult` (dated) · `ReferenceRange` (one per interval *era* per
 biomarker, carrying `valid_from`/`valid_to` — an as-of `WHERE valid_from <= date
 AND (valid_to IS NULL OR date <= valid_to)` finds the range in effect at any
-time) · `Nutrient` · `Food` (Yazio meal correlations) · `Symptom` (cycle signs) ·
-`Activity`. `Ingredient` is modeled but unpopulated (awaits the food-composition
-lookup, §5.8).
+time) · `Nutrient` · `Food` (canonical USDA food, 13.7k, with per-100g macros —
+the vocabulary A5's `log_meal` resolves against) · `Ingredient` (2.3k, USDA) ·
+`Meal` (logged Yazio consumption event, 6.0k) · `Symptom` (cycle signs) ·
+`Activity`.
+
+*Food vs Meal:* `Food` is the canonical entity composed of `Ingredient`s; `Meal`
+is a logged consumption event. Linking a `Meal` to its canonical `Food` isn't yet
+possible — the Apple Health nutrition export (unnamed correlations) and the Yazio
+CSV (named products) share no key — so the reconciliation (`food_map`) stays in
+DuckDB and the graph carries the two layers independently.
 
 **Edges:** `LabResult-MEASURED_AS→Biomarker`, `LabResult-RESULT_ON→Day`,
 `ReferenceRange-REF_FOR→Biomarker`, `Day-IN_PHASE→CyclePhase`,
 `Activity-PERFORMED_ON→Day`, `Day-INTAKE_ON→Nutrient` (amount),
-`Food-FOOD_LOGGED_ON→Day`, `Food-CONTAINS→Nutrient` (amount),
-`Symptom-OBSERVED_ON→Day` (value); `Food-COMPOSED_OF→Ingredient` modeled/empty.
+`Meal-LOGGED_ON→Day`, `Meal-CONTAINS→Nutrient` (amount),
+`Food-COMPOSED_OF→Ingredient` (gram_weight, 18.6k edges),
+`Symptom-OBSERVED_ON→Day` (value).
 
 Example — hormone results by inferred cycle phase (Cypher):
 

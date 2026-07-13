@@ -42,6 +42,21 @@ def test_biomarker_reference_range_traversal(tmp_path):
     assert res.get_next() == ["tsh", 0.5, 4.8]
 
 
+def test_food_ingredient_composition(tmp_path):
+    conn = _conn(tmp_path)
+    ontology.create_schema(conn)
+    conn.execute("CREATE (:Food {fdc_id:1, description:'Hummus', category:'x', data_type:'sr'})")
+    conn.execute("CREATE (:Ingredient {key:'chickpea', name:'Chickpeas'})")
+    conn.execute(
+        "MATCH (f:Food {fdc_id:1}), (i:Ingredient {key:'chickpea'}) "
+        "CREATE (f)-[:COMPOSED_OF {gram_weight:50.0}]->(i)"
+    )
+    res = conn.execute(
+        "MATCH (f:Food)-[c:COMPOSED_OF]->(i:Ingredient) RETURN f.description, i.name, c.gram_weight"
+    )
+    assert res.get_next() == ["Hummus", "Chickpeas", 50.0]
+
+
 def test_day_phase_traversal(tmp_path):
     conn = _conn(tmp_path)
     ontology.create_schema(conn)

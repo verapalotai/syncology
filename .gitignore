@@ -34,3 +34,6 @@ data/raw/public/openfoodfacts/
 
 /.quarto/
 **/*.quarto_ipynb
+
+# private local reports (personal health data — never commit)
+docs/*.private.md
